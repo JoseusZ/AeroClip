@@ -50,7 +50,16 @@ namespace AeroClip::Core {
 
         // Calculamos el rectángulo total deseado para que el área cliente sea
         // exactamente kFlyoutWidth x kFlyoutHeight.
-        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME;
+        //
+        // Sin WS_THICKFRAME: en Win7 Classic el borde redimensionable es un
+        // 3D elevado grueso que se mete en la esquina superior izquierda y
+        // tapa parte del texto "Historial" del caption nativo. Usando solo
+        // WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU obtenemos un caption
+        // nativo limpio (X de cierre + titulo visibles) con borde fino de
+        // 1 px, que en Classic y Aero se ve como chrome nativo del sistema.
+        // El popup no es redimensionable por el usuario; el contenido tiene
+        // scroll interno que ya gestiona el historial.
+        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
         // Quitamos maximize/minimize, dejamos solo close.
         style &= ~(WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
 

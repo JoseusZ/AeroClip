@@ -77,12 +77,18 @@ namespace AeroClip::Core {
         static constexpr int kVisualCaptionPx = 28;
 
         int  ListAreaTop()    const {
-            // En Basic el chrome es no-cliente (~22px) y kTopMargin=14 ya deja
-            // los items holgados. En Aero/Classic el chrome puede caer dentro
-            // del cliente (DWM extended) o reportar altura 0, y entonces los
-            // items pintarian debajo del titulo nativo: reservamos la altura
-            // visual del caption en esos dos temas.
-            if (m_te && m_te->Current() != AeroClip::Theme::Basic)
+            // En Basic el chrome es no-cliente (~22px) y kTopMargin=14 ya
+            // deja los items holgados. En Aero el caption lo pinta DWM
+            // dentro del cliente (DwmExtendFrameIntoClientArea), asi que
+            // reservamos kVisualCaptionPx + kTopMargin para que las tarjetas
+            // no se solapen con el cristal.
+            //
+            // En Classic el caption es no-cliente (lo pinta DefWindowProc en
+            // WM_NCPAINT, NO consume area cliente). Reservar altura extra
+            // en Classic solo crea un hueco vacio arriba que rompe el look:
+            // las tarjetas quedan demasiado abajo y se ve una franja gris
+            // innecesaria. Por eso Classic == kTopMargin (sin extras).
+            if (m_te && m_te->Current() == AeroClip::Theme::Aero)
                 return kVisualCaptionPx + kTopMargin;
             return kTopMargin;
         }
