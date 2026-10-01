@@ -8,7 +8,7 @@
 
 namespace AeroClip {
 
-    inline constexpr int kHistoryMax = 15;
+    inline constexpr int kHistoryMax = 10;
     inline constexpr int kFlyoutWidth = 250;
     inline constexpr int kFlyoutHeight = 425;
 

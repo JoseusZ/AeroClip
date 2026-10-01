@@ -42,6 +42,12 @@ namespace AeroClip::Core {
         int   m_scrollY       = 0;
         BOOL  m_trackingMouse = FALSE;
         BOOL  m_aeroExtended  = FALSE;
+        // Flag de "primer Paint tras Create". EnableAeroCaption ya hace
+        // Refresh() al final de Create, pero por si el primer WM_PAINT
+        // llega antes de ese momento, garantizamos que el tema esta re-
+        // evaluado con HWND valido y message loop activo. Solo se evalua
+        // una vez por sesion del popup.
+        BOOL  m_themeResolvedAtPaint = FALSE;
 
         // Tamano REAL del area cliente (cacheado en WM_SIZE). NO usamos
         // constantes porque el chrome nativo cambia entre temas y entre

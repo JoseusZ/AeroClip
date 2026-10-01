@@ -54,7 +54,13 @@ namespace AeroClip::UI {
 
         void   Refresh();
         Theme  Current() const { return m_theme; }
-        BOOL   IsAeroGlass() const { return m_aeroGlass; }
+        // IsAeroGlass se deriva SIEMPRE de Current() para que no haya
+        // inconsistencia entre m_theme y m_aeroGlass. El flag m_aeroGlass
+        // se mantiene como cache interno (rellenado en Refresh()) pero ya
+        // NO se usa fuera de la clase: cualquier sitio que pregunte si
+        // "estamos en Aero" usa este metodo, garantizando que la rama de
+        // pintado sea coherente en TODOS los renderers.
+        BOOL   IsAeroGlass() const { return m_theme == Theme::Aero; }
 
         const Palette& Colors() const { return m_palette; }
 
@@ -71,6 +77,8 @@ namespace AeroClip::UI {
 
     private:
         Theme   m_theme = Theme::Basic;
+        // Cache interno del estado DWM en DetectTheme(). Ya NO se consulta
+        // desde fuera: IsAeroGlass() se deriva de m_theme.
         BOOL    m_aeroGlass = FALSE;
         Palette m_palette;
 

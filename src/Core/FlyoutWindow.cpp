@@ -99,12 +99,25 @@ namespace AeroClip::Core {
     }
 
     void FlyoutWindow::EnableAeroCaption() {
-        if (!m_te || !m_te->IsAeroGlass()) return;
+        // SIEMPRE empezamos con FALSE. Solo se pone TRUE si la extension
+        // tiene exito. Asi m_aeroExtended nunca refleja un valor obsoleto.
+        m_aeroExtended = FALSE;
+        if (!m_te || !m_hwnd) return;
+
+        // Re-evaluar el tema AQUI (con HWND valido y message loop activo).
+        // Esto soluciona el caso donde el constructor global de ThemeEngine
+        // (global estatica en main.cpp) se ejecuta antes de que el sistema
+        // tenga su contexto de visual styles / DWM listo, lo que dejaba
+        // m_theme mal cacheado (tipicamente Classic en maquinas Aero). No-
+    // Clipboard / no-portapapeles: solo UI.
+        m_te->Refresh();
+
         BOOL comp = FALSE;
         if (FAILED(::DwmIsCompositionEnabled(&comp)) || !comp) return;
-        // Extendemos el cristal SOLO a la caption nativa. El resto del area
-        // cliente lo pintamos nosotros sobre fondo solido para evitar el
-        // efecto "glitch" que aparece al pintar opaco sobre cristal.
+        if (!m_te->IsAeroGlass()) return;
+
+        // Extendemos el cristal SOLO a la caption nativa. El resto del
+        // area cliente lo pintamos nosotros sobre fondo solido.
         MARGINS m = { 0, 0, CaptionHeight(), 0 };
         if (SUCCEEDED(::DwmExtendFrameIntoClientArea(m_hwnd, &m))) {
             m_aeroExtended = TRUE;
@@ -322,6 +335,18 @@ namespace AeroClip::Core {
             if (hovered) {
                 UI::ItemRenderer::DrawMoreButton(hdc, MoreButtonRect(i), *m_te, moreH);
             }
+
+            // RESTAURAR el clip del ListArea tras cada item. ItemRenderer::
+            // DrawCard hace SelectClipRgn(ring) cuando hay hover para
+            // pintar el borde de uxtheme BUTTON; ese ring REEMPLAZA (no
+            // combina) el clip actual. Si el item esta al borde inferior y
+            // su rc se extiende fuera del ListArea, el borde de hover se
+            // pintaria fuera del area visible. Reaplicar el clip aqui
+            // garantiza que cualquier pintado posterior respete el limite.
+            HRGN reapply = ::CreateRectRgn(kSidePadding, top,
+                                            m_clientW - kSidePadding, bot);
+            ::SelectClipRgn(hdc, reapply);
+            ::DeleteObject(reapply);
         }
 
         ::SelectClipRgn(hdc, nullptr);
@@ -369,14 +394,16 @@ namespace AeroClip::Core {
     void FlyoutWindow::Paint(HDC hdc, const RECT& rcClient) {
         const auto& p = m_te->Colors();
 
-        // Area cliente: fondo solido. La caption se encarga DWM/Windows.
+        // En Aero dejamos SIN pintar la franja superior donde DWM extiende
+        // el cristal de la caption nativa. Si pintamos ahi con FillRect,
+        // aparece una franja blanca opaca que tapa el glass (bug visible).
+        // En Classic/Basic pintamos toda el area (el caption nativo se
+        // pinta fuera del cliente por DefWindowProc, no hay cristal).
         if (m_aeroExtended) {
-            // Bajo el caption extendido pintamos un fondo translucido para que
-            // el cristal se vea de modo ligero pero las tarjetas tengan base.
-            // En Aero real, el area extendida es solo la caption, asi que aqui
-            // pintamos fondo opaco normal.
+            RECT rcBelow = rcClient;
+            rcBelow.top = CaptionHeight();
             HBRUSH hb = ::CreateSolidBrush(p.flyoutBg);
-            ::FillRect(hdc, &rcClient, hb);
+            ::FillRect(hdc, &rcBelow, hb);
             ::DeleteObject(hb);
         }
         else {
@@ -387,9 +414,6 @@ namespace AeroClip::Core {
 
         PaintItems(hdc, rcClient);
         PaintScrollbar(hdc, m_buffer ? m_buffer->Count() : 0, rcClient);
-
-        // Asegura que NO pintamos encima del caption.
-        // El clip del cliente ya lo garantiza; no hay header custom.
     }
 
     LRESULT CALLBACK FlyoutWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -520,6 +544,17 @@ namespace AeroClip::Core {
             RECT rc;
             ::GetClientRect(hwnd, &rc);
 
+            // Re-evaluar el tema UNA SOLA VEZ en el primer Paint tras Create.
+            // Esto cubre el caso en que el constructor global de ThemeEngine
+            // (global estatica en main.cpp) se ejecuta antes de que DWM /
+            // visual styles estuvieran listos para este proceso, lo que
+            // dejaba m_theme mal cacheado (Classic en maquinas Aero). NO
+            // toca clipboard ni hotkey: solo UI.
+            if (!self->m_themeResolvedAtPaint && self->m_te) {
+                self->m_te->Refresh();
+                self->m_themeResolvedAtPaint = TRUE;
+            }
+
             // Double buffer para eliminar flickering.
             HDC mem = ::CreateCompatibleDC(hdc);
             HBITMAP bmp = ::CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
@@ -549,10 +584,14 @@ namespace AeroClip::Core {
             // Tras refrescar tema el chrome nativo puede tener otro tamano;
             // forzamos reflow para que el area cliente siga siendo 360x520.
             self->ReflowForTheme();
-            if (msg == WM_DWMCOMPOSITIONCHANGED) {
-                self->DisableAeroCaption();
-                self->EnableAeroCaption();
-            }
+            // SIEMPRE resincronizamos el caption Aero con el estado REAL
+            // de DWM despues de Refresh (cubre el escenario Classic <-> Aero
+            // donde el orden de los mensajes no esta garantizado).
+            self->DisableAeroCaption();
+            self->EnableAeroCaption();
+            // Tras un cambio de tema permitimos que el siguiente Paint
+            // vuelva a re-evaluar (cubre transitorios entre los mensajes).
+            self->m_themeResolvedAtPaint = FALSE;
             ::InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
