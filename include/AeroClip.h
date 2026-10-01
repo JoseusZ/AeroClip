@@ -9,8 +9,8 @@
 namespace AeroClip {
 
     inline constexpr int kHistoryMax = 15;
-    inline constexpr int kFlyoutWidth = 360;
-    inline constexpr int kFlyoutHeight = 520;
+    inline constexpr int kFlyoutWidth = 250;
+    inline constexpr int kFlyoutHeight = 425;
 
     // Techo de bytes por item. Mantiene el peor caso del buffer en
     // ~kHistoryMax * kMaxItemBytes (15 * 8 MB = 120 MB) y evita que
