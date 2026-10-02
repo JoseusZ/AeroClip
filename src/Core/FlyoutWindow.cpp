@@ -341,9 +341,12 @@ namespace AeroClip::Core {
             BuildRenderItemForPaint(item, ri);
             UI::ItemRenderer::DrawItem(hdc, rc, ri, pinned, hovered, *m_te);
 
-            if (hovered) {
-                UI::ItemRenderer::DrawMoreButton(hdc, MoreButtonRect(i), *m_te, moreH);
-            }
+            // El boton "..." (more) debe estar SIEMPRE visible, no solo
+            // cuando hay hover sobre el item. Sin hover sobre el boton se
+            // pinta con su estilo neutro; cuando el cursor entra encima
+            // (m_moreHover == i), DrawMoreButton recibe hovered=TRUE y
+            // muestra su variant activo (rojo con borde, en Aero).
+            UI::ItemRenderer::DrawMoreButton(hdc, MoreButtonRect(i), *m_te, moreH);
 
             // RESTAURAR el clip del ListArea tras cada item. ItemRenderer::
             // DrawCard hace SelectClipRgn(ring) cuando hay hover para
