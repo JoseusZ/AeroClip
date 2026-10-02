@@ -288,8 +288,13 @@ namespace AeroClip::UI {
             ::DeleteObject(dark);
         }
         else {
-            HBRUSH hb = ::CreateSolidBrush(hovered ? p.moreBtnHover : p.cardBg);
-            HPEN   hp = ::CreatePen(PS_SOLID, 1, hovered ? p.moreBtnBorder : p.cardBorder);
+            // Hover del boton "..." usa el mismo cardBgHover/cardBorderHover
+            // que el item (azul claro en Aero) para mantener consistencia
+            // visual con el resto del popup. Antes usaba moreBtnHover/
+            // moreBtnBorder (rosa/rojo) lo que destacaba demasiado y no
+            // casaba con el look nativo Win7.
+            HBRUSH hb = ::CreateSolidBrush(hovered ? p.cardBgHover : p.cardBg);
+            HPEN   hp = ::CreatePen(PS_SOLID, 1, hovered ? p.cardBorderHover : p.cardBorder);
             HBRUSH ob = static_cast<HBRUSH>(::SelectObject(hdc, hb));
             HPEN   op = static_cast<HPEN>(::SelectObject(hdc, hp));
 
@@ -302,7 +307,9 @@ namespace AeroClip::UI {
 
         HFONT old = static_cast<HFONT>(::SelectObject(hdc, te.FontSemibold()));
         ::SetBkMode(hdc, TRANSPARENT);
-        ::SetTextColor(hdc, hovered ? p.moreGlyphHover : p.moreGlyph);
+        // El glyph tambien: en hover usa cardTextHover (azul oscuro) en
+        // lugar de moreGlyphHover (rojo) para mantener la paleta del item.
+        ::SetTextColor(hdc, hovered ? p.cardTextHover : p.moreGlyph);
 
         RECT tr = rc;
         tr.top -= 1;

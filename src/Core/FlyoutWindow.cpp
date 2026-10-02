@@ -176,10 +176,19 @@ namespace AeroClip::Core {
 
         int item = HitTestItem(x, y);
         if (item >= 0) {
-            m_hoverItem = item;
             RECT rcMore = MoreButtonRect(item);
-            if (x >= rcMore.left && x < rcMore.right && y >= rcMore.top && y < rcMore.bottom) {
+            BOOL overMore = (x >= rcMore.left && x < rcMore.right &&
+                              y >= rcMore.top  && y < rcMore.bottom);
+            if (overMore) {
+                // El cursor esta encima del boton "...": SOLO marcamos el
+                // sub-hover del boton. m_hoverItem queda en -1, asi el item
+                // permanece en estado neutro y no se pinta con borde/card
+                // de item hovereado. Asi el usuario puede hacer hover solo
+                // sobre el boton sin "seleccionar" el item entero.
                 m_moreHover = item;
+            }
+            else {
+                m_hoverItem = item;
             }
         }
 
@@ -294,7 +303,13 @@ namespace AeroClip::Core {
         for (int i = 0; i < n; ++i) {
             RECT rc = ItemRect(i);
             if (rc.bottom <= top || rc.top >= bot) continue;
-            BOOL hovered = (m_hoverItem == i) || (m_moreHover == i);
+            // hovered del item es SOLO m_hoverItem == i. m_moreHover se
+            // mantiene separado: si el cursor esta sobre el boton "..."
+            // (m_moreHover == i), m_hoverItem es -1 (UpdateHover los hace
+            // mutuamente excluyentes) y el item permanece neutro. Asi el
+            // usuario puede hacer hover SOLO sobre el boton sin que el
+            // item entero se pinte con borde/cardBgHover.
+            BOOL hovered = (m_hoverItem == i);
             BOOL moreH = (m_moreHover == i);
 
             const auto item = m_buffer->Get(i);   // copia por valor
