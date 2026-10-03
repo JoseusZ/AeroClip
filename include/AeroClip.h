@@ -45,6 +45,7 @@ namespace AeroClip {
     };
 
     inline constexpr UINT MSG_CLIPBOARD_UPDATED = WM_USER + 1;
+    inline constexpr UINT MSG_PERFORM_PASTE      = WM_USER + 2;
     inline constexpr int  kHotkeyId = 1;
 
     struct ClipboardSession {

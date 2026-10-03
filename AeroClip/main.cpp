@@ -8,6 +8,7 @@
 #include "Clipboard/ClipboardMonitor.h"
 #include "Core/FlyoutWindow.h"
 #include "Core/HotkeyManager.h"
+#include "Utils/InputInjector.h"
 #include <objbase.h>
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
@@ -22,10 +23,25 @@ static Core::HotkeyManager          g_hotkey;
 
 static HWND g_hostHwnd = nullptr;
 
+static void PerformPasteFromIndex(int idx) {
+        if (idx < 0 || idx >= g_buffer.Count()) return;
+        const auto& it = g_buffer.Get(idx);
+        if (it.kind == AeroClip::ItemKind::Image)
+            Utils::InputInjector::PasteImage(it);
+        else
+            Utils::InputInjector::PasteText(it);
+    }
+
 LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_HOTKEY:
         if (wp == kHotkeyId) g_flyout.Toggle();
+        return 0;
+    case MSG_PERFORM_PASTE:
+        // Llega tras click en una tarjeta: el flyout ya esta oculto, asi
+        // que el foco esta volviendo a la app previa y SendInput llega al
+        // destino previsto en lugar de Sigue blo blo blo.
+        PerformPasteFromIndex(static_cast<int>(wp));
         return 0;
     case WM_DESTROY:
         ::PostQuitMessage(0);
@@ -67,6 +83,14 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
         [&](int idx) { g_buffer.Remove(idx); },
         [&](int idx) { g_buffer.TogglePin(idx); },
         [&]()       { g_buffer.RemoveUnpinned(); });
+
+    // Click en una tarjeta -> diferir el pegado al host HWND. Asi el
+    // flyout termina de ocultarse, el foco vuelve a la app previa, y
+    // SendInput llega al destino correcto sin races con WM_KILLFOCUS.
+    g_flyout.SetOnSelect([](int idx) {
+        if (g_hostHwnd) ::PostMessage(g_hostHwnd, MSG_PERFORM_PASTE,
+                                      static_cast<WPARAM>(idx), 0);
+    });
 
     // Registers Win+V against the host (HostWndProc handles WM_HOTKEY)
     if (!g_hotkey.Register(g_hostHwnd)) {

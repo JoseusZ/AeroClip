@@ -112,21 +112,24 @@ namespace AeroClip::Utils {
         }
 
         std::vector<BYTE> compressedDpapi;
-        DWORD cbCompressed = 0;
-        if (!AeroClip::Storage::HistoryBuffer::LoadImageFromTemp(item, compressedDpapi, &cbCompressed)) {
+        DWORD cbOriginal = 0;
+        if (!AeroClip::Storage::HistoryBuffer::LoadImageFromTemp(item, compressedDpapi, &cbOriginal)) {
             return FALSE;
         }
+        // compressedDpapi.size() == tamano DPAPI-encriptado en disco (cbStored).
+        // cbOriginal solo se usa como cota destino para LZ4_decompress_safe.
+        if (compressedDpapi.empty()) return FALSE;
 
         // 1) DPAPI CryptUnprotectMemory (igual que HistoryBuffer::Protect).
-        SIZE_T cbAligned = (cbCompressed + 15) & ~static_cast<SIZE_T>(15);
-        LPVOID enc = ::HeapAlloc(::GetProcessHeap(), 0, cbAligned);
+        SIZE_T cbAligned = ((SIZE_T)compressedDpapi.size() + 15) & ~static_cast<SIZE_T>(15);
+        LPVOID enc = ::HeapAlloc(::GetProcessHeap(), HEAP_ZERO_MEMORY, cbAligned);
         if (!enc) return FALSE;
-        if (cbCompressed > 0) memcpy(enc, compressedDpapi.data(), cbCompressed);
-        if (cbAligned > cbCompressed) memset((BYTE*)enc + cbCompressed, 0, cbAligned - cbCompressed);
+        memcpy(enc, compressedDpapi.data(), compressedDpapi.size());
 
         BOOL dpapiOk = ::CryptUnprotectMemory(enc, static_cast<DWORD>(cbAligned),
                                               CRYPTPROTECTMEMORY_SAME_PROCESS);
         if (!dpapiOk) {
+            ::SecureZeroMemory(enc, cbAligned);
             ::HeapFree(::GetProcessHeap(), 0, enc);
             return FALSE;
         }
