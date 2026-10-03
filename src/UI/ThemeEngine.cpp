@@ -123,8 +123,8 @@ namespace AeroClip::UI {
 
 HTHEME ThemeEngine::OpenListViewTheme(HWND hwnd) const {
         if (m_theme == Theme::Classic) return nullptr;
-        // Si OpenThemeData(NULL) falla en Win7, pasar hwnd es valido y evita
-        // algun caso de aplicacion sin context registrada.
+        // If OpenThemeData(NULL) fails on Win7, passing hwnd is valid and avoids
+        // cases where the application lacks a registered context.
         return ::OpenThemeData(hwnd ? hwnd : nullptr, L"Explorer::ListView");
     }
 

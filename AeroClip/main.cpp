@@ -1,6 +1,6 @@
-﻿// AeroClip - Punto de entrada Win32.
-// Aplicacion nativa en segundo plano: registra Win+V, monitoriza el portapapeles
-// con WM_CLIPBOARDUPDATE y muestra el flyout con el historial cifrado en RAM.
+﻿// AeroClip - Win32 entry point.
+// Native background application: registers Win+V, monitors the clipboard
+// via WM_CLIPBOARDUPDATE, and displays the flyout with encrypted history in RAM.
 
 #include "AeroClip.h"
 #include "UI/ThemeEngine.h"
@@ -11,9 +11,6 @@
 
 using namespace AeroClip;
 
-// Orden requerido por el spec: Eliminar, Anclar, ---, Borrar todo.
-// Las acciones reales se cablean aqui para que el menu del flyout solo notifique.
-
 static Storage::HistoryBuffer       g_buffer;
 static UI::ThemeEngine              g_theme;
 static Clipboard::ClipboardMonitor  g_monitor;
@@ -21,10 +18,6 @@ static Core::FlyoutWindow           g_flyout;
 static Core::HotkeyManager          g_hotkey;
 
 static HWND g_hostHwnd = nullptr;
-
-// El host es un HWND_MESSAGE que recibe WM_HOTKEY (id=1) del sistema.
-// El flyout (su propio HWND) recibe MSG_CLIPBOARD_UPDATED directamente
-// desde el ClipboardMonitor via PostMessage.
 
 LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
@@ -56,18 +49,18 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
 
     if (!g_flyout.Create(hInst, g_buffer, g_theme)) return 2;
 
-    // Acciones que el menu contextual del flyout dispara.
+    // Actions triggered by the flyout's context menu
     g_flyout.SetContextActions(
         [&](int idx) { g_buffer.Remove(idx); },
         [&](int idx) { g_buffer.TogglePin(idx); },
         [&]()       { g_buffer.RemoveUnpinned(); });
 
-    // Registra Win+V contra el host (HostWndProc maneja WM_HOTKEY).
+    // Registers Win+V against the host (HostWndProc handles WM_HOTKEY)
     if (!g_hotkey.Register(g_hostHwnd)) {
         ::OutputDebugStringW(L"AeroClip: RegisterHotKey failed (Win+V ya estaba tomado)\n");
     }
 
-    // Monitor del portapapeles: envia MSG_CLIPBOARD_UPDATED al flyout (PostMessage).
+    // Clipboard monitor: sends MSG_CLIPBOARD_UPDATED to the flyout (PostMessage)
     g_monitor.Start(g_buffer, g_flyout.GetHwnd());
 
     MSG msg;

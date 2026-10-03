@@ -42,16 +42,10 @@ namespace AeroClip::Core {
         int   m_scrollY       = 0;
         BOOL  m_trackingMouse = FALSE;
         BOOL  m_aeroExtended  = FALSE;
-        // Flag de "primer Paint tras Create". EnableAeroCaption ya hace
-        // Refresh() al final de Create, pero por si el primer WM_PAINT
-        // llega antes de ese momento, garantizamos que el tema esta re-
-        // evaluado con HWND valido y message loop activo. Solo se evalua
-        // una vez por sesion del popup.
-        BOOL  m_themeResolvedAtPaint = FALSE;
 
-        // Tamano REAL del area cliente (cacheado en WM_SIZE). NO usamos
-        // constantes porque el chrome nativo cambia entre temas y entre
-        // maquinas y el cliente difiere.
+        static constexpr UINT_PTR kThemeCoalesceTimerId = 0xAC17;
+        static constexpr int     kThemeCoalesceMs      = 50;
+
         int   m_clientW = kFlyoutWidth;
         int   m_clientH = kFlyoutHeight;
 
@@ -60,34 +54,18 @@ namespace AeroClip::Core {
         std::function<void(int)> m_actPin;
         std::function<void()>    m_actClearAll;
 
-        // Distribucion del AREA CLIENTE (no del total de ventana).
-        // El titulo y los bordes los dibuja Windows/DWM con chrome nativo.
+		//The ttile and borders are drawn by Windows/DWM with native chrome
         static constexpr int kTopMargin    = 14;
         static constexpr int kBottomMargin = 14;
         static constexpr int kSidePadding  = 10;
         static constexpr int kItemHeight   = 74;
         static constexpr int kItemGap      = 6;
 
-        // Altura VISUAL real del caption nativo en Win7. SM_CYCAPTION devuelve
-        // 0 cuando DWM compone (Aero), porque entonces la caption no es no-
-        // cliente sino que DWM la pinta DENTRO del cliente via
-        // DwmExtendFrameIntoClientArea. En Clasico, con DWM aun presente o
-        // segun metricas del sistema, tambien puede ser menor que la altura
-        // visual. En Basic el caption es no-cliente y kTopMargin solo basta.
+        //Actual visual height of the native caption on Windows 7: SM_CYCAPTION returns 0 when DWM composition (Aero) is active.
         static constexpr int kVisualCaptionPx = 28;
 
         int  ListAreaTop()    const {
-            // En Basic el chrome es no-cliente (~22px) y kTopMargin=14 ya
-            // deja los items holgados. En Aero el caption lo pinta DWM
-            // dentro del cliente (DwmExtendFrameIntoClientArea), asi que
-            // reservamos kVisualCaptionPx + kTopMargin para que las tarjetas
-            // no se solapen con el cristal.
-            //
-            // En Classic el caption es no-cliente (lo pinta DefWindowProc en
-            // WM_NCPAINT, NO consume area cliente). Reservar altura extra
-            // en Classic solo crea un hueco vacio arriba que rompe el look:
-            // las tarjetas quedan demasiado abajo y se ve una franja gris
-            // innecesaria. Por eso Classic == kTopMargin (sin extras).
+            // In Basic, the chrome is non-client (~22px), and kTopMargin=14 already leaves the items with plenty of room.
             if (m_te && m_te->Current() == AeroClip::Theme::Aero)
                 return kVisualCaptionPx + kTopMargin;
             return kTopMargin;

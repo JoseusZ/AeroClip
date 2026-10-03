@@ -18,10 +18,6 @@ namespace AeroClip::UI {
     void ItemRenderer::DrawCard(HDC hdc, const RECT& rc, const ThemeEngine& te, BOOL hovered) {
         const auto& p = te.Colors();
 
-        // Regla unica: IsAeroGlass() == TRUE -> pinta Aero (redondeado,
-        // paleta Aero, hover con uxtheme BUTTON). Cualquier otro caso
-        // (Basic + Classic) -> Rectangle con GetSysColor, respetando
-        // personalizacion del usuario.
         if (!te.IsAeroGlass()) {
             HBRUSH hb = ::CreateSolidBrush(hovered ? p.cardBgHover : p.cardBg);
             ::FillRect(hdc, &rc, hb);
@@ -50,25 +46,13 @@ namespace AeroClip::UI {
             ::InflateRect(&rc2, 1, 1);
             HTHEME th = te.GetButtonTheme();
 
-            // Creamos un anillo de 2px alrededor del item para pintar el
-            // borde de uxtheme BUTTON en hover. CRITICO: el anillo se
-            // COMBINA (RGN_AND) con el clip que ya estuviera activo en el
-            // DC (típicamente el ListArea impuesto por PaintItems). Si el
-            // item esta al borde inferior del area visible, el anillo se
-            // recorta automaticamente al ListArea: el borde inferior del
-            // item queda cortado limpiamente en el limite visible, no se
-            // pinta fuera del popup.
+
             HRGN ring = ::CreateRectRgn(rc.left, rc.top, rc.right, rc.bottom);
             HRGN inn  = ::CreateRectRgn(rc.left + 2, rc.top + 2,
                                          rc.right - 2, rc.bottom - 2);
             ::CombineRgn(ring, ring, inn, RGN_DIFF);
             ::DeleteObject(inn);
 
-            // Combinar el ring con el clip actual. ExtSelectClipRgn con
-            // RGN_AND interseca ambos. El resultado: solo se pinta donde
-            // ambos lo permitan (anillo Y ListArea). El clip original del
-            // ListArea queda "encerrado" en el DC; tras pintar, restauramos
-            // el clip que habia ANTES para no contaminar el siguiente item.
             HRGN prevClip = ::CreateRectRgn(0, 0, 1, 1);
             BOOL hadPrevClip = ::GetClipRgn(hdc, prevClip) > 0;
             ::ExtSelectClipRgn(hdc, ring, RGN_AND);
@@ -76,7 +60,7 @@ namespace AeroClip::UI {
 
             ::DrawThemeBackground(th, hdc, BP_PUSHBUTTON, PBS_HOT, &rc2, &rc);
 
-            // Restaurar el clip previo.
+            // Restore the clip price
             if (hadPrevClip) {
                 ::SelectClipRgn(hdc, prevClip);
             } else {
@@ -85,12 +69,6 @@ namespace AeroClip::UI {
             ::DeleteObject(prevClip);
         }
 
-        // El clip ahora es el del ListArea (o ninguno si no habia), por
-        // lo que el RoundRect del borde del card se recorta correctamente
-        // al area visible. Esto arregla el bug: cuando el ultimo item
-        // visible esta parcialmente cortado por el scroll, su borde
-        // inferior queda recortado limpiamente en el ListArea en lugar de
-        // pintarse fuera del popup.
         HPEN hp = ::CreatePen(PS_SOLID, 1, hovered ? p.cardBorderHover : p.cardBorder);
         HPEN op = static_cast<HPEN>(::SelectObject(hdc, hp));
         HBRUSH nb = static_cast<HBRUSH>(::SelectObject(hdc, ::GetStockObject(NULL_BRUSH)));
@@ -271,9 +249,7 @@ namespace AeroClip::UI {
     void ItemRenderer::DrawMoreButton(HDC hdc, const RECT& rc,
         const ThemeEngine& te, BOOL hovered) {
         const auto& p = te.Colors();
-        // Mismo criterio que DrawCard / PaintItems / PaintScrollbar:
-        // IsAeroGlass() == TRUE -> pinta Aero (redondeado + paleta);
-        // cualquier otro caso -> Rectangle con GetSysColor.
+
         if (!te.IsAeroGlass()) {
             HBRUSH hb = ::CreateSolidBrush(hovered ? p.cardBgHover : p.cardBg);
             ::FillRect(hdc, &rc, hb);
@@ -288,11 +264,7 @@ namespace AeroClip::UI {
             ::DeleteObject(dark);
         }
         else {
-            // Hover del boton "..." usa el mismo cardBgHover/cardBorderHover
-            // que el item (azul claro en Aero) para mantener consistencia
-            // visual con el resto del popup. Antes usaba moreBtnHover/
-            // moreBtnBorder (rosa/rojo) lo que destacaba demasiado y no
-            // casaba con el look nativo Win7.
+
             HBRUSH hb = ::CreateSolidBrush(hovered ? p.cardBgHover : p.cardBg);
             HPEN   hp = ::CreatePen(PS_SOLID, 1, hovered ? p.cardBorderHover : p.cardBorder);
             HBRUSH ob = static_cast<HBRUSH>(::SelectObject(hdc, hb));
@@ -307,8 +279,6 @@ namespace AeroClip::UI {
 
         HFONT old = static_cast<HFONT>(::SelectObject(hdc, te.FontSemibold()));
         ::SetBkMode(hdc, TRANSPARENT);
-        // El glyph tambien: en hover usa cardTextHover (azul oscuro) en
-        // lugar de moreGlyphHover (rojo) para mantener la paleta del item.
         ::SetTextColor(hdc, hovered ? p.cardTextHover : p.moreGlyph);
 
         RECT tr = rc;

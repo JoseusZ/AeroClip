@@ -1,4 +1,4 @@
-﻿// AeroClip - Tipos comunes y constantes globales
+﻿// AeroClip - Common types and global constants
 #ifndef AEROCLIP_H
 #define AEROCLIP_H
 
@@ -12,9 +12,9 @@ namespace AeroClip {
     inline constexpr int kFlyoutWidth = 250;
     inline constexpr int kFlyoutHeight = 425;
 
-    // Techo de bytes por item. Mantiene el peor caso del buffer en
-    // ~kHistoryMax * kMaxItemBytes (15 * 8 MB = 120 MB) y evita que
-    // capturas de pantalla 4K o volcados enormes saturen la RAM.
+    // Byte limit per item. Keeps the worst-case buffer size at
+    // ~kHistoryMax * kMaxItemBytes (15 * 8 MB = 120 MB) and prevents
+    // 4K screenshots or huge dumps from saturating RAM.
     inline constexpr DWORD kMaxTextBytes = 4 * 1024 * 1024;  // 4 MB texto
     inline constexpr DWORD kMaxImageBytes = 8 * 1024 * 1024; // 8 MB DIB
 

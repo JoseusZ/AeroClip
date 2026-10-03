@@ -83,9 +83,10 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+          <Manifest>app.manifest</Manifest>
+        </Link>
+      </ItemDefinitionGroup>
+      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -100,9 +101,10 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+          <Manifest>app.manifest</Manifest>
+        </Link>
+      </ItemDefinitionGroup>
+      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
@@ -115,10 +117,11 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+          <Manifest>app.manifest</Manifest>
+          <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+        </Link>
+      </ItemDefinitionGroup>
+      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -133,10 +136,11 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemGroup>
+          <Manifest>app.manifest</Manifest>
+          <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+        </Link>
+      </ItemDefinitionGroup>
+      <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="..\src\Storage\HistoryBuffer.cpp" />
     <ClCompile Include="..\src\Utils\InputInjector.cpp" />
@@ -148,7 +152,11 @@
     <ClCompile Include="..\src\Core\FlyoutWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\include\AeroClip.h" />
+      <Manifest Include="app.manifest" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ClInclude Include="..\include\AeroClip.h" />
     <ClInclude Include="..\include\Storage\HistoryBuffer.h" />
     <ClInclude Include="..\include\Utils\InputInjector.h" />
     <ClInclude Include="..\include\Clipboard\ClipboardMonitor.h" />

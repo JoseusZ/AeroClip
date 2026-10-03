@@ -185,7 +185,6 @@ namespace AeroClip::Storage {
         if (!pData || cbData == 0) return FALSE;
         CriticalSectionLock lock(m_cs);
         if (m_items.empty()) return FALSE;
-        // Reusamos IsDuplicate que ya descifra la ultima entrada.
         return IsDuplicate(m_items[0], m_items[0].kind, pData, cbData);
     }
 
