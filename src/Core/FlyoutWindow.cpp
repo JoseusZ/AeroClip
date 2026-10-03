@@ -192,6 +192,10 @@ namespace AeroClip::Core {
     }
 
     void FlyoutWindow::OnClipboardUpdate() {
+        // Regenera la cache de miniaturas (incluye descomprimir LZ4 y
+        // construir JPEG para imagenes). Antes este codigo descifraba
+        // el DIB original en cada WM_PAINT -> pico de ~3 MB por paint.
+        if (m_buffer) m_buffer->PrepareRender();
         if (m_hwnd && ::IsWindowVisible(m_hwnd)) {
             ::InvalidateRect(m_hwnd, nullptr, FALSE);
         }
@@ -227,31 +231,16 @@ namespace AeroClip::Core {
         ::SelectObject(hdc, old);
     }
 
-    static void BuildRenderItemForPaint(
+    static void BuildRenderItemForPaint_DELETED(
             const AeroClip::HistoryItem& hi,
             Storage::RenderItem& out) {
         out.text.clear();
-        out.image.clear();
-
-        if (!hi.pData || !hi.cbData) return;
-        DWORD cb = 0;
-        LPVOID data = Storage::HistoryBuffer::DecryptCopy(hi, &cb);
-        if (!data || cb == 0) return;
-
-        if (cb >= sizeof(BITMAPINFOHEADER)) {
-            const auto* bih = reinterpret_cast<const BITMAPINFOHEADER*>(data);
-            if (bih->biSize == sizeof(BITMAPINFOHEADER) && bih->biWidth > 0 && bih->biHeight != 0) {
-                out.image.assign(static_cast<const BYTE*>(data), static_cast<const BYTE*>(data) + cb);
-            }
-            else {
-                out.text.assign(static_cast<const wchar_t*>(data), cb / sizeof(wchar_t));
-            }
-        }
-        else {
-            out.text.assign(static_cast<const wchar_t*>(data), cb / sizeof(wchar_t));
-        }
-        ::SecureZeroMemory(data, cb);
-        ::HeapFree(::GetProcessHeap(), 0, data);
+        out.thumbnailJpeg.clear();
+        // Implementacion eliminada (Opcion C). Las miniaturas JPEG se
+        // generan en HistoryBuffer::PrepareRender(); aqui solo usamos
+        // GetCached(i) que devuelve el RenderItem precomputado.
+        (void)hi;
+        (void)out;
     }
 
     void FlyoutWindow::PaintItems(HDC hdc, const RECT& rcClient) {
@@ -312,10 +301,9 @@ namespace AeroClip::Core {
             }
 
             // Actual content (text/image) using native APIs
-          
-            Storage::RenderItem ri;
-            BuildRenderItemForPaint(item, ri);
-            UI::ItemRenderer::DrawItem(hdc, rc, ri, pinned, hovered, *m_te);
+
+                        const Storage::RenderItem& ri = m_buffer->GetCached(i);
+                        UI::ItemRenderer::DrawItem(hdc, rc, ri, pinned, hovered, *m_te);
             UI::ItemRenderer::DrawMoreButton(hdc, MoreButtonRect(i), *m_te, moreH);
             HRGN reapply = ::CreateRectRgn(kSidePadding, top,
                                             m_clientW - kSidePadding, bot);

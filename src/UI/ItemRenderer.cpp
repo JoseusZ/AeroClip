@@ -3,8 +3,11 @@
 #include <uxtheme.h>
 #include <algorithm>
 #include <cstring>
+#include <objbase.h>
+#include <gdiplus.h>
 
 #pragma comment(lib, "uxtheme.lib")
+#pragma comment(lib, "gdiplus.lib")
 
 namespace AeroClip::UI {
 
@@ -99,74 +102,43 @@ namespace AeroClip::UI {
         ::SelectObject(hdc, old);
     }
 
-    static DWORD ComputePixelOffset(const BITMAPINFOHEADER& bih) {
-        DWORD off = bih.biSize;
-        if (bih.biCompression == BI_BITFIELDS && bih.biBitCount >= 16 && bih.biBitCount <= 32)
-            off += 12;
-        if (bih.biBitCount <= 8) {
-            DWORD colors = bih.biClrUsed ? bih.biClrUsed : (1u << bih.biBitCount);
-            off += colors * sizeof(RGBQUAD);
-        }
-        return off;
-    }
+    void ItemRenderer::DrawImageThumb(HDC hdc, const RECT& rc, const BYTE* jpeg, DWORD cbJpeg) {
+        if (!jpeg || cbJpeg == 0) return;
 
-    void ItemRenderer::DrawImageThumb(HDC hdc, const RECT& rc, const BYTE* dib, DWORD cbDib) {
-        if (!dib || cbDib < sizeof(BITMAPINFOHEADER)) return;
-        const auto* bih = reinterpret_cast<const BITMAPINFOHEADER*>(dib);
-        if (bih->biWidth <= 0 || bih->biHeight == 0 || bih->biPlanes != 1 || bih->biBitCount == 0)
+        // Volcar los bytes JPEG en un IStream y pedirle a GDI+ que los
+        // decodifique. Asi nos ahorramos re-parsear el DIB manualmente.
+        HGLOBAL hglob = ::GlobalAlloc(GMEM_MOVEABLE, cbJpeg);
+        if (!hglob) return;
+        void* pMem = ::GlobalLock(hglob);
+        if (!pMem) { ::GlobalFree(hglob); return; }
+        std::memcpy(pMem, jpeg, cbJpeg);
+        ::GlobalUnlock(hglob);
+
+        IStream* stream = nullptr;
+        if (FAILED(::CreateStreamOnHGlobal(hglob, TRUE, &stream))) {
+            ::GlobalFree(hglob);
             return;
-
-        int srcW = abs(bih->biWidth);
-        int srcH = abs(bih->biHeight);
-
-        int dstW = 0, dstH = 0;
-        if (srcW >= srcH) {
-            dstW = kThumbSize;
-            dstH = (std::max)(1, static_cast<int>(srcH * (kThumbSize / static_cast<double>(srcW))));
         }
-        else {
-            dstH = kThumbSize;
-            dstW = (std::max)(1, static_cast<int>(srcW * (kThumbSize / static_cast<double>(srcH))));
+        // CreateStreamOnHGlobal con TRUE libera el HGLOBAL cuando se libera
+        // el stream -> no hacemos GlobalFree aqui.
+
+        Gdiplus::Bitmap* bmp = Gdiplus::Bitmap::FromStream(stream);
+        stream->Release();
+        if (!bmp || bmp->GetLastStatus() != Gdiplus::Ok) {
+            delete bmp;
+            return;
         }
 
-        int cx = (rc.left + rc.right - dstW) / 2;
-        int cy = (rc.top + rc.bottom - dstH) / 2;
+        int dstW = rc.right - rc.left;
+        int dstH = rc.bottom - rc.top;
+        if (dstW <= 0 || dstH <= 0) { delete bmp; return; }
 
-        DWORD pixelOff = ComputePixelOffset(*bih);
-        if (pixelOff >= cbDib) return;
+        Gdiplus::Graphics g(hdc);
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
+        g.DrawImage(bmp, rc.left, rc.top, dstW, dstH);
 
-#pragma pack(push, 1)
-        struct {
-            BITMAPINFOHEADER bmiHeader;
-            RGBQUAD          bmiColors[256];
-        } bi = {};
-#pragma pack(pop)
-
-        bi.bmiHeader = *bih;
-        const BYTE* extra = dib + bih->biSize;
-
-        if (bih->biCompression == BI_BITFIELDS && bih->biBitCount >= 16 && bih->biBitCount <= 32) {
-            if (extra && (cbDib >= bih->biSize + 12)) {
-                std::memcpy(&bi.bmiColors[0], extra, 12);
-            }
-        }
-        else if (bih->biBitCount <= 8) {
-            DWORD colors = bih->biClrUsed ? bih->biClrUsed : (1u << bih->biBitCount);
-            if (colors > 256) colors = 256;
-            if (extra && (cbDib - pixelOff >= colors * sizeof(RGBQUAD))) {
-                std::memcpy(bi.bmiColors, extra, colors * sizeof(RGBQUAD));
-            }
-        }
-
-        int oldMode = ::SetStretchBltMode(hdc, HALFTONE);
-        POINT oldOrg;
-        ::SetBrushOrgEx(hdc, 0, 0, &oldOrg);
-
-        ::StretchDIBits(hdc, cx, cy, dstW, dstH, 0, 0, srcW, srcH,
-            dib + pixelOff, reinterpret_cast<const BITMAPINFO*>(&bi), DIB_RGB_COLORS, SRCCOPY);
-
-        ::SetBrushOrgEx(hdc, oldOrg.x, oldOrg.y, nullptr);
-        ::SetStretchBltMode(hdc, oldMode);
+        delete bmp;
     }
 
     void ItemRenderer::DrawTextLabel(HDC hdc, const RECT& rc, LPCWSTR text,
@@ -299,8 +271,9 @@ namespace AeroClip::UI {
             (rc.top + rc.bottom - kThumbSize) / 2 + kThumbSize
         };
 
-        if (!cached.image.empty()) {
-            DrawImageThumb(hdc, thumbRc, cached.image.data(), static_cast<DWORD>(cached.image.size()));
+        if (!cached.thumbnailJpeg.empty()) {
+            DrawImageThumb(hdc, thumbRc, cached.thumbnailJpeg.data(),
+                           static_cast<DWORD>(cached.thumbnailJpeg.size()));
         }
         else {
             DrawTextPlaceholder(hdc, thumbRc, te);

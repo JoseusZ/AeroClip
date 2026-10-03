@@ -25,11 +25,16 @@ namespace AeroClip {
 
     struct HistoryItem {
         ItemKind kind = ItemKind::Text;
-        DWORD    cbData = 0;
-        LPVOID   pData = nullptr;
-        SIZE_T   cbAlloc = 0;
-        BOOL     pinned = FALSE;
+        DWORD    cbData   = 0;     // tamano original (sin comprimir)
+        DWORD    cbStored = 0;     // tamano en disco (lz4 + dpapi); 0 para texto
+        LPVOID   pData    = nullptr;  // SOLO texto (HeapAlloc + DPAPI); nullptr para imagen
+        SIZE_T   cbAlloc  = 0;
+        BOOL     pinned   = FALSE;
         FILETIME ftCaptured = {};
+        // --- NUEVO: persistencia en %TEMP%\AeroClip\<pid>_<seq>.bin ---
+        // Solo se usan cuando kind == Image. Para texto permanecen vacios.
+        WCHAR    szTempPath[MAX_PATH] = {};
+        BOOL     bHasTemp = FALSE;
     };
 
     enum class Theme : BYTE {

@@ -8,6 +8,9 @@
 #include "Clipboard/ClipboardMonitor.h"
 #include "Core/FlyoutWindow.h"
 #include "Core/HotkeyManager.h"
+#include <objbase.h>
+#include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
 
 using namespace AeroClip;
 
@@ -45,7 +48,17 @@ static BOOL CreateHostWindow(HINSTANCE hInst) {
 }
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
-    if (!CreateHostWindow(hInst)) return 1;
+    // GDI+ es necesario para las miniaturas JPEG (Opcion C).
+    Gdiplus::GdiplusStartupInput gdiStartupIn{};
+    ULONG_PTR gdiToken = 0;
+    if (Gdiplus::GdiplusStartup(&gdiToken, &gdiStartupIn, nullptr) != Gdiplus::Ok) {
+        return 1;
+    }
+
+    if (!CreateHostWindow(hInst)) {
+        Gdiplus::GdiplusShutdown(gdiToken);
+        return 1;
+    }
 
     if (!g_flyout.Create(hInst, g_buffer, g_theme)) return 2;
 
@@ -71,5 +84,6 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
 
     g_hotkey.Unregister();
     g_monitor.Stop();
+    Gdiplus::GdiplusShutdown(gdiToken);
     return 0;
 }
