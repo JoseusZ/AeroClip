@@ -138,7 +138,7 @@ namespace AeroClip::Utils {
         if (!dib) { ::HeapFree(::GetProcessHeap(), 0, enc); return FALSE; }
         int n = LZ4_decompress_safe(static_cast<const char*>(enc),
                                      static_cast<char*>(dib),
-                                     (int)cbAligned, (int)cbDib);
+                                     (int)item.cbLz4, (int)cbDib);
         ::SecureZeroMemory(enc, cbAligned);
         ::HeapFree(::GetProcessHeap(), 0, enc);
         if (n < 0 || (DWORD)n != cbDib) {

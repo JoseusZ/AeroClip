@@ -26,6 +26,7 @@ namespace AeroClip {
     struct HistoryItem {
         ItemKind kind = ItemKind::Text;
         DWORD    cbData   = 0;     // tamano original (sin comprimir)
+        DWORD    cbLz4    = 0;     // tamano LZ4 comprimido (sin DPAPI); 0 para texto
         DWORD    cbStored = 0;     // tamano en disco (lz4 + dpapi); 0 para texto
         LPVOID   pData    = nullptr;  // SOLO texto (HeapAlloc + DPAPI); nullptr para imagen
         SIZE_T   cbAlloc  = 0;

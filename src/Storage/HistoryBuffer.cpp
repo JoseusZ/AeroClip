@@ -90,28 +90,28 @@ namespace AeroClip::Storage {
         if (bih->biWidth <= 0 || bih->biHeight == 0) return out;
         LONG cy = (bih->biHeight > 0) ? bih->biHeight : -bih->biHeight;
         if (bih->biWidth > 8192 || cy > 8192) return out;
+        BOOL srcBottomUp = (bih->biHeight > 0);
 
-        // 1) Construir HBITMAP desde DIB usando CreateDIBSection -> siempre
-        //    soporta top-down y bottom-up sin condiciones raras de paleta.
+        // 1) Construir DIB section TOP-DOWN (biHeight negativo) para que GDI+
+        //    no haga doble flip al envolver el HBITMAP.
         BITMAPINFO bmi{};
         bmi.bmiHeader = *bih;
         bmi.bmiHeader.biCompression = BI_RGB;
-        bmi.bmiHeader.biHeight = cy;     // forzar top-down positivo
+        bmi.bmiHeader.biHeight = -cy;
         bmi.bmiHeader.biSizeImage = 0;
 
         LPVOID bits = nullptr;
         HBITMAP hbm = ::CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
         if (!hbm || !bits) { if (hbm) ::DeleteObject(hbm); return out; }
 
-        // 2) Copiar pixeles del DIB original al DIB top-down (saltamos la
-        //    cabecera y la paleta; el offset de pixeles empieza justo despues).
+        // 2) Copiar pixeles respetando orientacion.
         DWORD headerSize = bih->biSize + bih->biClrUsed * sizeof(RGBQUAD);
         LONG rowBytes = ((bih->biWidth * bih->biBitCount + 31) / 32) * 4;
         SIZE_T imgBytes = (SIZE_T)rowBytes * cy;
         if (headerSize + imgBytes > cbDib) { ::DeleteObject(hbm); return out; }
         const BYTE* src = dib + headerSize;
-        if (bih->biHeight > 0) {
-            // bottom-up: copiar filas en orden inverso a top-down
+        if (srcBottomUp) {
+            // bottom-up -> top-down: invertir filas
             BYTE* dst = static_cast<BYTE*>(bits);
             for (LONG y = 0; y < cy; ++y) {
                 memcpy(dst + y * rowBytes, src + (cy - 1 - y) * rowBytes, rowBytes);
@@ -125,7 +125,7 @@ namespace AeroClip::Storage {
         Gdiplus::Bitmap srcBmp(hbm, nullptr);
         if (srcBmp.GetLastStatus() != Gdiplus::Ok) { ::DeleteObject(hbm); return out; }
 
-        // 4) Render en 48x48 con interpolacion alta.
+        // 4) Render 48x48 a color (sin conversion a grises).
         const int kSide = 48;
         Gdiplus::Bitmap thumb(kSide, kSide, PixelFormat24bppRGB);
         Gdiplus::Graphics g(&thumb);
@@ -135,21 +135,7 @@ namespace AeroClip::Storage {
         g.DrawImage(&srcBmp, 0, 0, kSide, kSide);
         ::DeleteObject(hbm);
 
-        // 5) Convertir a escala de grises (BT.601 luma).
-        Gdiplus::Bitmap gray(kSide, kSide, PixelFormat24bppRGB);
-        Gdiplus::Graphics gg(&gray);
-        gg.Clear(Gdiplus::Color::White);
-        for (int y = 0; y < kSide; ++y) {
-            for (int x = 0; x < kSide; ++x) {
-                Gdiplus::Color c;
-                thumb.GetPixel(x, y, &c);
-                BYTE r = c.GetR(), gC = c.GetG(), b = c.GetB();
-                BYTE l = static_cast<BYTE>((299 * r + 587 * gC + 114 * b) / 1000);
-                gray.SetPixel(x, y, Gdiplus::Color(255, l, l, l));
-            }
-        }
-
-        // 6) Encode a JPEG q50.
+        // 5) Encode a JPEG q50 directo (color).
         CLSID jpegClsid;
         if (GetEncoderClsidJpeg(&jpegClsid) < 0) return out;
 
@@ -165,7 +151,7 @@ namespace AeroClip::Storage {
         ULONG q = 50;
         enc.Parameter[0].Value = &q;
 
-        if (gray.Save(stream, &jpegClsid, &enc) != Gdiplus::Ok) return out;
+        if (thumb.Save(stream, &jpegClsid, &enc) != Gdiplus::Ok) return out;
 
         LARGE_INTEGER liZero{}; liZero.QuadPart = 0;
         ULARGE_INTEGER pos{};
@@ -246,6 +232,7 @@ namespace AeroClip::Storage {
         it.pData = nullptr;
         it.cbData = 0;
         it.cbAlloc = 0;
+        it.cbLz4 = 0;
         it.cbStored = 0;
         it.bHasTemp = FALSE;
         it.szTempPath[0] = 0;
@@ -275,15 +262,29 @@ namespace AeroClip::Storage {
     BOOL HistoryBuffer::IsDuplicate(const HistoryItem& item, ItemKind kind, const void* pData, DWORD cbData) {
         if (item.kind != kind || item.cbData != cbData) return FALSE;
 
-        // Imagen: comparacion exige leer del disco + descomprimir.
-        if (item.kind == ItemKind::Image && item.bHasTemp) {
-            std::vector<BYTE> compressed;
+        // Imagen: comparacion exige leer del disco + CryptUnprotectMemory + LZ4.
+        if (item.kind == ItemKind::Image && item.bHasTemp && item.cbLz4 > 0) {
+            std::vector<BYTE> storedDpapi;
             DWORD cbOriginal = 0;
-            if (!LoadImageFromTemp(item, compressed, &cbOriginal)) return FALSE;
+            if (!LoadImageFromTemp(item, storedDpapi, &cbOriginal)) return FALSE;
+
+            SIZE_T cbAligned = ((SIZE_T)storedDpapi.size() + 15) & ~(SIZE_T)15;
+            LPVOID lz4 = ::HeapAlloc(::GetProcessHeap(),
+                                     HEAP_ZERO_MEMORY, cbAligned);
+            if (!lz4) return FALSE;
+            if (!storedDpapi.empty())
+                memcpy(lz4, storedDpapi.data(), storedDpapi.size());
+            if (!::CryptUnprotectMemory(lz4, (DWORD)cbAligned,
+                                        CRYPTPROTECTMEMORY_SAME_PROCESS)) {
+                ::SecureZeroMemory(lz4, cbAligned);
+                ::HeapFree(::GetProcessHeap(), 0, lz4);
+                return FALSE;
+            }
             int cbDec = 0;
-            LPVOID dec = Lz4Decompress(compressed.data(), (int)compressed.size(),
+            LPVOID dec = Lz4Decompress(lz4, (int)item.cbLz4,
                                         (int)cbOriginal, cbDec);
-            compressed.clear();
+            ::SecureZeroMemory(lz4, cbAligned);
+            ::HeapFree(::GetProcessHeap(), 0, lz4);
             if (!dec) return FALSE;
             BOOL equal = (cbDec == (int)cbData) && (memcmp(dec, pData, cbData) == 0);
             ::SecureZeroMemory(dec, cbDec);
@@ -361,6 +362,7 @@ namespace AeroClip::Storage {
             ::SecureZeroMemory(enc, cbEnc);
             ::HeapFree(::GetProcessHeap(), 0, enc);
 
+            it.cbLz4 = (DWORD)cbLz4;
             it.cbStored = (DWORD)cbEnc;
             it.pData = nullptr;
             it.cbAlloc = 0;
@@ -617,20 +619,38 @@ namespace AeroClip::Storage {
                 }
                 else if (it.kind == ItemKind::Image) {
                     newCache[i].text.clear();
-                    if (it.bHasTemp) {
-                        std::vector<BYTE> compressed;
+                    if (it.bHasTemp && it.cbLz4 > 0) {
+                        std::vector<BYTE> storedDpapi;
                         DWORD cbOriginal = 0;
-                        if (LoadImageFromTemp(it, compressed, &cbOriginal)) {
-                            int cbDec = 0;
-                            LPVOID dib = Lz4Decompress(compressed.data(),
-                                                       (int)compressed.size(),
-                                                       (int)cbOriginal, cbDec);
-                            compressed.clear();
-                            if (dib) {
-                                newCache[i].thumbnailJpeg =
-                                    MakeThumbnailJpeg((BYTE*)dib, (DWORD)cbDec);
-                                ::SecureZeroMemory(dib, cbDec);
-                                ::HeapFree(::GetProcessHeap(), 0, dib);
+                        if (LoadImageFromTemp(it, storedDpapi, &cbOriginal)) {
+                            // 1) Desproteger DPAPI para obtener LZ4 crudo.
+                            SIZE_T cbAligned = ((SIZE_T)storedDpapi.size() + 15) & ~(SIZE_T)15;
+                            LPVOID lz4 = ::HeapAlloc(::GetProcessHeap(),
+                                                     HEAP_ZERO_MEMORY, cbAligned);
+                            if (lz4) {
+                                if (!storedDpapi.empty())
+                                    memcpy(lz4, storedDpapi.data(), storedDpapi.size());
+                                if (::CryptUnprotectMemory(lz4,
+                                                            (DWORD)cbAligned,
+                                                            CRYPTPROTECTMEMORY_SAME_PROCESS)) {
+                                    // 2) LZ4 descomprimir. Usar it.cbLz4 como
+                                    // tamano real de entrada, NO cbAligned
+                                    // (el padding a 16 de DPAPI contiene
+                                    // ceros que LZ4 interpretaria como
+                                    // literales y reventaria la salida).
+                                    int cbDib = 0;
+                                    LPVOID dib = Lz4Decompress(lz4,
+                                                               (int)it.cbLz4,
+                                                               (int)cbOriginal, cbDib);
+                                    if (dib) {
+                                        newCache[i].thumbnailJpeg =
+                                            MakeThumbnailJpeg((BYTE*)dib, (DWORD)cbDib);
+                                        ::SecureZeroMemory(dib, cbDib);
+                                        ::HeapFree(::GetProcessHeap(), 0, dib);
+                                    }
+                                }
+                                ::SecureZeroMemory(lz4, cbAligned);
+                                ::HeapFree(::GetProcessHeap(), 0, lz4);
                             }
                         }
                     }

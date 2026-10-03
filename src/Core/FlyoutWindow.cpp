@@ -1,5 +1,6 @@
 ﻿#include "Core/FlyoutWindow.h"
 #include "UI/ItemRenderer.h"
+#include "AeroClip.h"
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <vsstyle.h>
@@ -60,7 +61,7 @@ namespace AeroClip::Core {
 
         m_hwnd = ::CreateWindowEx(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-            kClass, L"Historial",
+            kClass, L"Portapapeles",
             style,
             x, y, totalW, totalH,
             nullptr, nullptr, hInst, this);
@@ -181,6 +182,10 @@ namespace AeroClip::Core {
         if (!m_hwnd) return;
         m_scrollY = 0;
         RecalcScrollBounds();
+        // Asegura que las miniaturas estan calculadas para el estado
+        // actual del buffer (los items pudieron haberse añadido antes
+        // de que la flyout existiera o se abriera por primera vez).
+        if (m_buffer) m_buffer->PrepareRender();
         ::ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
         ::SetForegroundWindow(m_hwnd);
         ::InvalidateRect(m_hwnd, nullptr, FALSE);
@@ -226,7 +231,7 @@ namespace AeroClip::Core {
         ::SetBkMode(hdc, TRANSPARENT);
         ::SetTextColor(hdc, p.cardTextMuted);
         RECT rc{ kSidePadding, ListAreaTop(), m_clientW - kSidePadding, ListAreaBottom() };
-        ::DrawTextW(hdc, L"Tu historial esta vacio.\nCopia algo para empezar.",
+        ::DrawTextW(hdc, L"Tu portapapales esta vacio.\nCopia algo para empezar.",
             -1, &rc, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
         ::SelectObject(hdc, old);
     }
@@ -389,10 +394,21 @@ namespace AeroClip::Core {
 
         case WM_SIZE: {
 
-            self->m_clientW = LOWORD(lp);
-            self->m_clientH = HIWORD(lp);
-            return 0;
-        }
+                    self->m_clientW = LOWORD(lp);
+                    self->m_clientH = HIWORD(lp);
+                    return 0;
+                }
+
+                case MSG_CLIPBOARD_UPDATED: {
+                    // ClipboardMonitor -> PostMessage(hwnd, MSG_CLIPBOARD_UPDATED).
+                    // Regenera la cache de miniaturas (incluye descomprimir LZ4 y
+                    // construir JPEG para imagenes). Sin este handler, los items
+                    // se añaden al buffer pero PrepareRender nunca corre y
+                    // GetCached(i) devuelve cache vacia -> solo "Abc" placeholder.
+                    if (self->m_buffer) self->m_buffer->PrepareRender();
+                    ::InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                }
 
         case WM_NCHITTEST: {
 
