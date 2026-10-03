@@ -80,9 +80,9 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
 
     // Actions triggered by the flyout's context menu
     g_flyout.SetContextActions(
-        [&](int idx) { g_buffer.Remove(idx); },
-        [&](int idx) { g_buffer.TogglePin(idx); },
-        [&]()       { g_buffer.RemoveUnpinned(); });
+        [&](int idx) { g_buffer.Remove(idx);      g_flyout.Refresh(); },
+        [&](int idx) { g_buffer.TogglePin(idx);   g_flyout.Refresh(); },
+        [&]()       { g_buffer.RemoveUnpinned();  g_flyout.Refresh(); });
 
     // Click en una tarjeta -> diferir el pegado al host HWND. Asi el
     // flyout termina de ocultarse, el foco vuelve a la app previa, y

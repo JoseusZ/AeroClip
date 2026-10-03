@@ -29,6 +29,11 @@ namespace AeroClip::Core {
 
         void SetOnSelect(std::function<void(int idx)> onSelect);
 
+                // Repinta la flyout tras un cambio externo al buffer (Remove, pin,
+                // clear all). Equivalente a un MSG_CLIPBOARD_UPDATED pero disparado
+                // por el llamador.
+                void Refresh();
+
         RECT GetWindowRect() const;
 
     private:

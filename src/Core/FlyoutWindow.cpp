@@ -206,6 +206,16 @@ namespace AeroClip::Core {
         }
     }
 
+    void FlyoutWindow::Refresh() {
+        // Llamado por main.cpp tras Remove / TogglePin / RemoveUnpinned
+        // para que la flyout repinte inmediatamente aunque no haya habido
+        // un cambio de clipboard.
+        if (m_buffer) m_buffer->PrepareRender();
+        if (m_hwnd && ::IsWindowVisible(m_hwnd)) {
+            ::InvalidateRect(m_hwnd, nullptr, FALSE);
+        }
+    }
+
     RECT FlyoutWindow::GetWindowRect() const {
         RECT r{ 0, 0, 0, 0 };
         if (m_hwnd) ::GetWindowRect(m_hwnd, &r);
