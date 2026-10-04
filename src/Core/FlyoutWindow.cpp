@@ -70,6 +70,24 @@ namespace AeroClip::Core {
 
         ::SetWindowLongPtr(m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         if (m_te) m_te->Refresh();
+
+        // Scrollbar NATIVA como control hijo (SBS_VERT). La dibujara Windows
+        // con el chrome del tema activo (Aero glass / Basic / Classic).
+        // La posicionamos manualmente para que no se desborde por encima del
+        // titulo DWM en Aero ni se salga del area cliente.
+        m_hScroll = ::CreateWindowEx(
+            0, L"SCROLLBAR", nullptr,
+            SBS_VERT | WS_CHILD | WS_VISIBLE,
+            0, 0, kScrollBarWidth, 100,  // posicion inicial; UpdateScrollBar la corrige
+            m_hwnd, nullptr, hInst, nullptr);
+        if (m_hScroll) {
+            // Por defecto los scrollbars llegan al tope y no se ocultan cuando
+            // el rango esta vacio. Asi garantizamos visibilidad consistente.
+            ::SetScrollRange(m_hScroll, SB_CTL, 0, 1, TRUE);
+        }
+
+        UpdateScrollBar();
+
         EnableAeroCaption();
         ::DwmFlush();
         return TRUE;
@@ -114,7 +132,7 @@ namespace AeroClip::Core {
 
     RECT FlyoutWindow::ItemRect(int index) const {
         int y = ListAreaTop() + index * (kItemHeight + kItemGap) - m_scrollY;
-        return { kSidePadding, y, m_clientW - kSidePadding, y + kItemHeight };
+        return { kSidePadding, y, ListAreaRight() - kSidePadding, y + kItemHeight };
     }
 
     RECT FlyoutWindow::MoreButtonRect(int index) const {
@@ -134,7 +152,7 @@ namespace AeroClip::Core {
 
         int relInside = rel - idx * (kItemHeight + kItemGap);
         if (relInside >= kItemHeight) return -1;
-        if (x < kSidePadding || x > m_clientW - kSidePadding) return -1;
+        if (x < kSidePadding || x > ListAreaRight() - kSidePadding) return -1;
 
         return idx;
     }
@@ -170,6 +188,7 @@ namespace AeroClip::Core {
         int max = MaxScrollY(n);
         if (m_scrollY > max) m_scrollY = max;
         if (m_scrollY < 0)   m_scrollY = 0;
+        UpdateScrollBar();
     }
 
     void FlyoutWindow::Toggle() {
@@ -182,6 +201,7 @@ namespace AeroClip::Core {
         if (!m_hwnd) return;
         m_scrollY = 0;
         RecalcScrollBounds();
+        UpdateScrollBar();
         // Asegura que las miniaturas estan calculadas para el estado
         // actual del buffer (los items pudieron haberse añadido antes
         // de que la flyout existiera o se abriera por primera vez).
@@ -210,6 +230,7 @@ namespace AeroClip::Core {
         // Llamado por main.cpp tras Remove / TogglePin / RemoveUnpinned
         // para que la flyout repinte inmediatamente aunque no haya habido
         // un cambio de clipboard.
+        RecalcScrollBounds();
         if (m_buffer) m_buffer->PrepareRender();
         if (m_hwnd && ::IsWindowVisible(m_hwnd)) {
             ::InvalidateRect(m_hwnd, nullptr, FALSE);
@@ -240,9 +261,10 @@ namespace AeroClip::Core {
         const auto& p = m_te->Colors();
         ::SetBkMode(hdc, TRANSPARENT);
         ::SetTextColor(hdc, p.cardTextMuted);
-        RECT rc{ kSidePadding, ListAreaTop(), m_clientW - kSidePadding, ListAreaBottom() };
+        RECT rc{ kSidePadding, ListAreaTop(), ListAreaRight() - kSidePadding, ListAreaBottom() };
         ::DrawTextW(hdc, L"Tu portapapales esta vacio.\nCopia algo para empezar.",
             -1, &rc, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
+        (void)rcClient;
         ::SelectObject(hdc, old);
     }
 
@@ -265,9 +287,9 @@ namespace AeroClip::Core {
         ::SetBkMode(hdc, TRANSPARENT);
         if (n == 0) { PaintEmptyState(hdc, rcClient); return; }
 
-        // Clip al area de lista para no pintar fuera.
+        // Clip al area de lista para no pintar fuera (deja sitio a la scrollbar nativa).
         HRGN rgn = ::CreateRectRgn(kSidePadding, top,
-                                    m_clientW - kSidePadding, bot);
+                                    ListAreaRight() - kSidePadding, bot);
         ::SelectClipRgn(hdc, rgn);
         ::DeleteObject(rgn);
 
@@ -321,7 +343,7 @@ namespace AeroClip::Core {
                         UI::ItemRenderer::DrawItem(hdc, rc, ri, pinned, hovered, *m_te);
             UI::ItemRenderer::DrawMoreButton(hdc, MoreButtonRect(i), *m_te, moreH);
             HRGN reapply = ::CreateRectRgn(kSidePadding, top,
-                                            m_clientW - kSidePadding, bot);
+                                            ListAreaRight() - kSidePadding, bot);
             ::SelectClipRgn(hdc, reapply);
             ::DeleteObject(reapply);
         }
@@ -329,42 +351,50 @@ namespace AeroClip::Core {
         ::SelectClipRgn(hdc, nullptr);
     }
 
-    void FlyoutWindow::PaintScrollbar(HDC hdc, int n, const RECT& rcClient) {
-        if (n == 0) return;
-        int contentH = ContentHeight(n);
-        int viewH = ListAreaHeight();
-        if (contentH <= viewH) return;
+    void FlyoutWindow::UpdateScrollBar() {
+        if (!m_hwnd || !m_hScroll) return;
+        int n = m_buffer ? m_buffer->Count() : 0;
 
-        const auto& p = m_te->Colors();
-        int sbX = m_clientW - 6;
-        int sbTop = ListAreaTop();
-        int sbBot = ListAreaBottom();
-        int sbH = sbBot - sbTop;
-        int maxScroll = std::max(1, contentH - viewH);
-        int thumbH = std::max(20, (int)(sbH * (double)viewH / contentH));
-        int thumbY = sbTop + (int)((sbH - thumbH) * (double)m_scrollY / maxScroll);
+        // Posicionar el control. y depende del tema para no chocar con el
+        // titulo DWM en Aero. h cubre hasta el borde inferior de la ventana.
+        int sbX = m_clientW - kScrollBarWidth;
+        int sbY = 0;
+        if (m_te && m_te->Current() == AeroClip::Theme::Aero) {
+            // Debajo del titulo que DWM extiende dentro del area cliente.
+            sbY = CaptionHeight();
+        }
+        int sbH = m_clientH - sbY;
+        if (sbH < 16) sbH = 16; // minimo razonable para que se vea
+        ::MoveWindow(m_hScroll, sbX, sbY, kScrollBarWidth, sbH, TRUE);
 
-        if (m_te && m_te->IsAeroGlass()) {
-            if (HTHEME hScr = m_te->OpenScrollbarTheme()) {
-                RECT trackRc{ sbX, sbTop, sbX + 4, sbBot };
-                RECT thumbRc{ sbX, thumbY, sbX + 4, thumbY + thumbH };
-                ::DrawThemeBackground(hScr, hdc, SBP_UPPERTRACKVERT, SCRBS_NORMAL, &trackRc, nullptr);
-                int thumbState = (m_hoverItem >= 0) ? SCRBS_HOT : SCRBS_NORMAL;
-                ::DrawThemeBackground(hScr, hdc, SBP_THUMBBTNVERT, thumbState, &thumbRc, nullptr);
-            }
+        if (n == 0) {
+            // Sin contenido: ocultar el control.
+            ::ShowWindow(m_hScroll, SW_HIDE);
             return;
         }
+        ::ShowWindow(m_hScroll, SW_SHOW);
 
-        // Classic / Basic: paint using GetSysColor, respecting customization.
-        RECT track{ sbX, sbTop, sbX + 4, sbBot };
-        HBRUSH hb = ::CreateSolidBrush(::GetSysColor(COLOR_SCROLLBAR));
-        ::FillRect(hdc, &track, hb);
-        ::DeleteObject(hb);
-
-        RECT thumb{ sbX, thumbY, sbX + 4, thumbY + thumbH };
-        HBRUSH ht = ::CreateSolidBrush(::GetSysColor(COLOR_3DSHADOW));
-        ::FillRect(hdc, &thumb, ht);
-        ::DeleteObject(ht);
+        // El SCROLLBAR nativo de Win32 calcula el tamano y posicion del
+        // thumb de forma inteligente a partir de:
+        //   nMin, nMax : rango total del contenido (en pixeles aqui).
+        //   nPage      : tamano del viewport visible.
+        //   nPos       : posicion actual de scroll.
+        // Formula: thumb_size = nPage / (nMax - nMin + 1) * track.
+        //          thumb_pos  = nPos / (nMax - nMin - nPage + 1) * (track - thumb).
+        // Usando nMax = ContentHeight(n) - 1 (alto total del contenido, no
+        // solo el overflow), el thumb refleja automaticamente la proporcion
+        // visible/total: con muchos items -> thumb pequeno; con pocos -> thumb
+        // grande. Sin asignar valores rigidos: Win32 lo deduce del contenido.
+        int content = ContentHeight(n);
+        int visible = ListAreaHeight();
+        SCROLLINFO si = {};
+        si.cbSize = sizeof(si);
+        si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
+        si.nMin   = 0;
+        si.nMax   = (content > 0) ? (content - 1) : 0;
+        si.nPage  = (UINT)visible;
+        si.nPos   = m_scrollY;
+        ::SetScrollInfo(m_hScroll, SB_CTL, &si, TRUE);
     }
 
     void FlyoutWindow::Paint(HDC hdc, const RECT& rcClient) {
@@ -384,7 +414,7 @@ namespace AeroClip::Core {
         }
 
         PaintItems(hdc, rcClient);
-        PaintScrollbar(hdc, m_buffer ? m_buffer->Count() : 0, rcClient);
+        // La scrollbar la dibuja el SO (WS_VSCROLL con el chrome del tema activo).
     }
 
     LRESULT CALLBACK FlyoutWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -404,10 +434,45 @@ namespace AeroClip::Core {
 
         case WM_SIZE: {
 
-                    self->m_clientW = LOWORD(lp);
-                    self->m_clientH = HIWORD(lp);
-                    return 0;
-                }
+                            self->m_clientW = LOWORD(lp);
+                            self->m_clientH = HIWORD(lp);
+                            self->UpdateScrollBar();
+                            return 0;
+                        }
+
+                case WM_VSCROLL: {
+                            // Scrollbar NATIVA (control hijo SBS_VERT). El SO la
+                            // dibuja con el chrome del tema activo y emite este
+                            // mensaje cuando el usuario la usa.
+                            int n = self->m_buffer ? self->m_buffer->Count() : 0;
+                            int maxScroll = self->MaxScrollY(n);
+                            int newY = self->m_scrollY;
+                            int code = LOWORD(wp);
+                            int posThumb = HIWORD(wp);
+                            switch (code) {
+                            case SB_LINEUP:        newY -= (self->kItemHeight + self->kItemGap); break;
+                            case SB_LINEDOWN:      newY += (self->kItemHeight + self->kItemGap); break;
+                            case SB_PAGEUP:        newY -= self->ListAreaHeight(); break;
+                            case SB_PAGEDOWN:      newY += self->ListAreaHeight(); break;
+                            case SB_THUMBPOSITION: newY = posThumb; break;
+                            case SB_THUMBTRACK:    newY = posThumb; break;
+                            case SB_TOP:           newY = 0; break;
+                            case SB_BOTTOM:        newY = maxScroll; break;
+                            default: return 0;
+                            }
+                            if (newY < 0) newY = 0;
+                            if (newY > maxScroll) newY = maxScroll;
+                            if (newY != self->m_scrollY) {
+                                self->m_scrollY = newY;
+                                SCROLLINFO si = {};
+                                si.cbSize = sizeof(si);
+                                si.fMask  = SIF_POS;
+                                si.nPos   = newY;
+                                ::SetScrollInfo(self->m_hScroll, SB_CTL, &si, TRUE);
+                                ::InvalidateRect(hwnd, nullptr, FALSE);
+                            }
+                            return 0;
+                        }
 
                 case MSG_CLIPBOARD_UPDATED: {
                     // ClipboardMonitor -> PostMessage(hwnd, MSG_CLIPBOARD_UPDATED).
@@ -415,6 +480,7 @@ namespace AeroClip::Core {
                     // construir JPEG para imagenes). Sin este handler, los items
                     // se añaden al buffer pero PrepareRender nunca corre y
                     // GetCached(i) devuelve cache vacia -> solo "Abc" placeholder.
+                    self->RecalcScrollBounds();
                     if (self->m_buffer) self->m_buffer->PrepareRender();
                     ::InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
@@ -513,6 +579,12 @@ namespace AeroClip::Core {
             self->m_scrollY -= delta / WHEEL_DELTA * step;
             if (self->m_scrollY < 0) self->m_scrollY = 0;
             if (self->m_scrollY > maxScroll) self->m_scrollY = maxScroll;
+            // Sincronizar la scrollbar nativa (mover el thumb visualmente).
+            SCROLLINFO si = {};
+            si.cbSize = sizeof(si);
+            si.fMask  = SIF_POS;
+            si.nPos   = self->m_scrollY;
+            ::SetScrollInfo(self->m_hScroll, SB_CTL, &si, TRUE);
             ::InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }

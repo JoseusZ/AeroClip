@@ -40,6 +40,7 @@ namespace AeroClip::Core {
         Storage::HistoryBuffer* m_buffer = nullptr;
         UI::ThemeEngine*        m_te     = nullptr;
         HWND                    m_hwnd   = nullptr;
+        HWND                    m_hScroll = nullptr;  // SCROLLBAR child control (SBS_VERT)
         HINSTANCE               m_inst   = nullptr;
 
         int   m_hoverItem     = -1;
@@ -60,11 +61,15 @@ namespace AeroClip::Core {
         std::function<void()>    m_actClearAll;
 
 		//The ttile and borders are drawn by Windows/DWM with native chrome
-        static constexpr int kTopMargin    = 14;
-        static constexpr int kBottomMargin = 14;
-        static constexpr int kSidePadding  = 10;
-        static constexpr int kItemHeight   = 74;
-        static constexpr int kItemGap      = 6;
+		static constexpr int kTopMargin    = 14;
+		static constexpr int kBottomMargin = 14;
+		static constexpr int kSidePadding  = 10;
+		static constexpr int kItemHeight   = 74;
+		static constexpr int kItemGap      = 6;
+		// Reservamos el ancho de la scrollbar NATIVA (la dibuja Windows con el
+		// chrome del tema activo: Aero glass / Basic / Classic). Reservamos
+		// siempre para que los items no queden cubiertos cuando aparece.
+		static constexpr int kScrollBarWidth = 17;
 
         //Actual visual height of the native caption on Windows 7: SM_CYCAPTION returns 0 when DWM composition (Aero) is active.
         static constexpr int kVisualCaptionPx = 28;
@@ -94,8 +99,13 @@ namespace AeroClip::Core {
 
         void Paint(HDC hdc, const RECT& rcClient);
         void PaintItems(HDC hdc, const RECT& rcClient);
-        void PaintScrollbar(HDC hdc, int n, const RECT& rcClient);
         void PaintEmptyState(HDC hdc, const RECT& rcClient);
+
+        // Sincroniza el estado de la scrollbar NATIVA (WS_VSCROLL) con m_scrollY
+        // y el tamano del contenido. Llamar cuando cambian los items o el
+        // tamano de la ventana.
+        void UpdateScrollBar();
+        int  ListAreaRight() const { return m_clientW - kScrollBarWidth; }
 
         void EnableAeroCaption();
         void DisableAeroCaption();
