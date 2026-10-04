@@ -112,8 +112,8 @@ namespace AeroClip::UI {
         int logPixY = ::GetDeviceCaps(screen, LOGPIXELSY);
         ::ReleaseDC(nullptr, screen);
 
-        LONG pt9 = -::MulDiv(9, logPixY, 72);
-        LONG pt12 = -::MulDiv(12, logPixY, 72);
+        LONG pt9  = -::MulDiv(9,  logPixY, 72) + 1;  // -1 px: 12 -> 11 px @ 96 DPI
+        LONG pt12 = -::MulDiv(12, logPixY, 72) + 1;  // -1 px: 16 -> 15 px @ 96 DPI
 
         m_fontRegular = MakeFont(FW_NORMAL, FALSE, FALSE, pt9);
         m_fontSemibold = MakeFont(FW_SEMIBOLD, FALSE, FALSE, pt9);

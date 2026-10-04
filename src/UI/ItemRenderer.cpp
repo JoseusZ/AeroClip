@@ -145,47 +145,92 @@ namespace AeroClip::UI {
         tr.top += 4;
         tr.bottom -= 4;
 
-        WCHAR line1[120];
-        int n = 0;
-        if (text) {
-            for (; text[n] && n < 119; ++n) {
-                WCHAR ch = text[n];
-                if (ch == L'\r' || ch == L'\n') break;
-                line1[n] = ch;
+        if (!text || !*text) {
+            ::SelectObject(hdc, old);
+            return;
+        }
+
+        // Wrap manual: DT_WORDBREAK de GDI solo corta en espacios/CRLF, por
+        // lo que URLs largas (sin espacios) se truncan con "..." en lugar de
+        // envolverse. Medimos cada caracter con GetTextExtentPoint32W y
+        // cortamos en el ULTIMO punto de quiebre valido (espacio, /, ?, &,
+        // =, -, _) que cabe en maxWidth. Preservamos "://" para que el
+        // esquema del URL no se separe. Si no hay punto de quiebre, cortamos
+        // al final del ancho disponible. DT_END_ELLIPSIS agrega "..." solo
+        // a la ultima linea visible si queda texto por dibujar.
+        TEXTMETRIC tm = {};
+        ::GetTextMetrics(hdc, &tm);
+        int lineHeight = tm.tmHeight > 0 ? tm.tmHeight : 14;
+        int maxWidth = tr.right - tr.left;
+        if (maxWidth <= 0) {
+            ::SelectObject(hdc, old);
+            return;
+        }
+        int maxLines = (tr.bottom - tr.top) / lineHeight;
+        if (maxLines < 1) maxLines = 1;
+
+        auto isSpace = [](WCHAR ch) -> bool {
+            return ch == L' ' || ch == L'\t';
+        };
+        auto isBreakable = [isSpace](WCHAR ch, WCHAR prev) -> bool {
+            if (isSpace(ch)) return true;
+            // No romper dentro de "://" (esquema de URL)
+            if (ch == L'/' && prev == L':') return false;
+            return ch == L'/' || ch == L'?' || ch == L'&' ||
+                   ch == L'=' || ch == L'-' || ch == L'_';
+        };
+
+        LPCWSTR cursor = text;
+        int lineIdx = 0;
+
+        while (*cursor && lineIdx < maxLines) {
+            LPCWSTR lastBreak = nullptr;
+            LPCWSTR bestEnd = cursor;
+            int currentWidth = 0;
+            WCHAR localPrev = (cursor > text) ? *(cursor - 1) : L'\0';
+
+            for (LPCWSTR q = cursor; *q; ++q) {
+                SIZE sz = {};
+                ::GetTextExtentPoint32W(hdc, q, 1, &sz);
+                currentWidth += sz.cx;
+
+                if (currentWidth > maxWidth) {
+                    break;
+                }
+                bestEnd = q + 1;
+                if (isBreakable(*q, localPrev)) {
+                    lastBreak = q + 1;
+                }
+                localPrev = *q;
             }
-        }
-        line1[n] = 0;
 
-        HFONT hOldSemibold = nullptr;
-        if (te.Current() != Theme::Classic) {
-            hOldSemibold = static_cast<HFONT>(::SelectObject(hdc, te.FontSemibold()));
-        }
+            // Si el texto completo cabe, no romper prematuramente en un
+            // espacio intermedio. Solo cortamos si realmente hay overflow.
+            LPCWSTR drawEnd = (lastBreak && *(bestEnd) != L'\0') ? lastBreak : bestEnd;
 
-        RECT r1 = tr;
-        r1.bottom = (tr.top + tr.bottom) / 2;
-        ::DrawTextW(hdc, line1, -1, &r1, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-
-        if (hOldSemibold) {
-            ::SelectObject(hdc, hOldSemibold);
-        }
-
-        if (text && text[n]) {
-            WCHAR line2[160];
-            int m = 0;
-            for (int i = n; text[i] && m < 159; ++i) {
-                WCHAR ch = text[i];
-                if (ch == L'\r') continue;
-                if (ch == L'\n') break;
-                line2[m++] = ch;
+            // Quitar espacios al inicio (por si el cursor quedo en uno).
+            LPCWSTR drawStart = cursor;
+            while (drawStart < drawEnd && isSpace(*drawStart)) {
+                drawStart++;
             }
-            line2[m] = 0;
 
-            HFONT hIt = static_cast<HFONT>(::SelectObject(hdc, te.FontItalic()));
-            ::SetTextColor(hdc, p.cardTextMuted);
-            RECT r2 = tr;
-            r2.top = (tr.top + tr.bottom) / 2;
-            ::DrawTextW(hdc, line2, -1, &r2, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            ::SelectObject(hdc, hIt);
+            int drawLen = (int)(drawEnd - drawStart);
+            // Quitar espacios al final.
+            while (drawLen > 0 && isSpace(drawStart[drawLen - 1])) {
+                drawLen--;
+            }
+
+            bool isLastLine = (lineIdx == maxLines - 1) || (*drawEnd == L'\0');
+            bool hasMore = (*drawEnd != L'\0');
+
+            RECT lr = { tr.left, tr.top + lineIdx * lineHeight,
+                        tr.right, tr.top + (lineIdx + 1) * lineHeight };
+            ::DrawTextW(hdc, drawStart, drawLen, &lr,
+                DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX |
+                (isLastLine && hasMore ? DT_END_ELLIPSIS : 0));
+
+            cursor = drawEnd;
+            lineIdx++;
         }
 
         ::SelectObject(hdc, old);
