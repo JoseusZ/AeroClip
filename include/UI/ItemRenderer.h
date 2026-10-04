@@ -14,9 +14,8 @@ namespace AeroClip::UI {
 
         static RECT MoreButtonRect(const RECT& itemRect);
         static void DrawCard(HDC hdc, const RECT& rc, const ThemeEngine& te, BOOL hovered);
-        static void DrawTextPlaceholder(HDC hdc, const RECT& rc, const ThemeEngine& te);
         static void DrawImageThumb(HDC hdc, const RECT& rc, const BYTE* jpeg, DWORD cbJpeg);
-        static void DrawTextLabel(HDC hdc, const RECT& rc, LPCWSTR text, const ThemeEngine& te, BOOL hovered);
+        static void DrawTextLabel(HDC hdc, const RECT& rc, LPCWSTR text, const ThemeEngine& te, BOOL hovered, BOOL hasThumb);
         static void DrawPinBadge(HDC hdc, const RECT& rc);
         static void DrawMoreButton(HDC hdc, const RECT& rc, const ThemeEngine& te, BOOL hovered);
 

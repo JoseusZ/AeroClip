@@ -81,27 +81,6 @@ namespace AeroClip::UI {
         ::DeleteObject(hp);
     }
 
-    void ItemRenderer::DrawTextPlaceholder(HDC hdc, const RECT& rc, const ThemeEngine& te) {
-        const auto& p = te.Colors();
-        HBRUSH hb = ::CreateSolidBrush(RGB(240, 240, 240));
-        HPEN   hp = ::CreatePen(PS_SOLID, 1, p.cardBorder);
-        HBRUSH ob = static_cast<HBRUSH>(::SelectObject(hdc, hb));
-        HPEN   op = static_cast<HPEN>(::SelectObject(hdc, hp));
-
-        ::RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 4, 4);
-        ::SelectObject(hdc, op);
-        ::SelectObject(hdc, ob);
-        ::DeleteObject(hp);
-        ::DeleteObject(hb);
-
-        HFONT old = static_cast<HFONT>(::SelectObject(hdc, te.FontRegular()));
-        ::SetBkMode(hdc, TRANSPARENT);
-        ::SetTextColor(hdc, p.cardTextMuted);
-        RECT tr = rc;
-        ::DrawTextW(hdc, L"Abc", -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        ::SelectObject(hdc, old);
-    }
-
     void ItemRenderer::DrawImageThumb(HDC hdc, const RECT& rc, const BYTE* jpeg, DWORD cbJpeg) {
         if (!jpeg || cbJpeg == 0) return;
 
@@ -142,7 +121,7 @@ namespace AeroClip::UI {
     }
 
     void ItemRenderer::DrawTextLabel(HDC hdc, const RECT& rc, LPCWSTR text,
-        const ThemeEngine& te, BOOL hovered) {
+        const ThemeEngine& te, BOOL hovered, BOOL hasThumb) {
         const auto& p = te.Colors();
         HFONT hf = (te.Current() == Theme::Classic && hovered)
             ? te.FontUnderline()
@@ -151,16 +130,25 @@ namespace AeroClip::UI {
         ::SetBkMode(hdc, TRANSPARENT);
         ::SetTextColor(hdc, hovered ? p.cardTextHover : p.cardText);
 
+        // Cuando hay miniatura (item de imagen con texto), reservamos
+        // kThumbSize + 16 a la izquierda para no chocar con ella.
+        // Cuando NO hay miniatura (item de texto puro), el texto usa todo el
+        // ancho del item - solo reservamos el espacio del boton "more" a la
+        // derecha y un pequeno margen.
         RECT tr = rc;
-        tr.left += kThumbSize + 16;
+        if (hasThumb) {
+            tr.left += kThumbSize + 16;
+        } else {
+            tr.left += 10;
+        }
         tr.right -= 40;
         tr.top += 4;
         tr.bottom -= 4;
 
-        WCHAR line1[80];
+        WCHAR line1[120];
         int n = 0;
         if (text) {
-            for (; text[n] && n < 79; ++n) {
+            for (; text[n] && n < 119; ++n) {
                 WCHAR ch = text[n];
                 if (ch == L'\r' || ch == L'\n') break;
                 line1[n] = ch;
@@ -182,9 +170,9 @@ namespace AeroClip::UI {
         }
 
         if (text && text[n]) {
-            WCHAR line2[100];
+            WCHAR line2[160];
             int m = 0;
-            for (int i = n; text[i] && m < 99; ++i) {
+            for (int i = n; text[i] && m < 159; ++i) {
                 WCHAR ch = text[i];
                 if (ch == L'\r') continue;
                 if (ch == L'\n') break;
@@ -264,6 +252,8 @@ namespace AeroClip::UI {
         const ThemeEngine& te) {
         DrawCard(hdc, rc, te, hovered);
 
+        BOOL hasThumb = !cached.thumbnailJpeg.empty();
+
         RECT thumbRc = {
             rc.left + 6,
             (rc.top + rc.bottom - kThumbSize) / 2,
@@ -271,16 +261,16 @@ namespace AeroClip::UI {
             (rc.top + rc.bottom - kThumbSize) / 2 + kThumbSize
         };
 
-        if (!cached.thumbnailJpeg.empty()) {
+        // Solo se dibuja el contenedor de la imagen cuando hay JPEG cacheada;
+        // para items de texto ya NO se muestra el placeholder "Abc" - el texto
+        // ocupa todo el ancho disponible del item.
+        if (hasThumb) {
             DrawImageThumb(hdc, thumbRc, cached.thumbnailJpeg.data(),
                            static_cast<DWORD>(cached.thumbnailJpeg.size()));
         }
-        else {
-            DrawTextPlaceholder(hdc, thumbRc, te);
-        }
 
         if (!cached.text.empty()) {
-            DrawTextLabel(hdc, rc, cached.text.c_str(), te, hovered);
+            DrawTextLabel(hdc, rc, cached.text.c_str(), te, hovered, hasThumb);
         }
 
         if (pinned) {
