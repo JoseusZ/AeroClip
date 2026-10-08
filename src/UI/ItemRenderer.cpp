@@ -108,7 +108,6 @@ namespace AeroClip::UI {
         const BYTE* jpeg, DWORD cbJpeg) {
         if (!jpeg || cbJpeg == 0) return {};
 
-        // Volcar los bytes JPEG en un IStream y dejar que GDI+ los decodifique.
         HGLOBAL hglob = ::GlobalAlloc(GMEM_MOVEABLE, cbJpeg);
         if (!hglob) return {};
         void* pMem = ::GlobalLock(hglob);
@@ -121,7 +120,6 @@ namespace AeroClip::UI {
             ::GlobalFree(hglob);
             return {};
         }
-        // CreateStreamOnHGlobal con TRUE libera el HGLOBAL al liberar el stream.
 
         Gdiplus::Bitmap* bmp = Gdiplus::Bitmap::FromStream(stream);
         stream->Release();
@@ -130,48 +128,41 @@ namespace AeroClip::UI {
             return {};
         }
 
-        // 1. SLOT_SIZE: lado del slot cuadrado y fijo del item.
-        const int SLOT_SIZE = thumbSlot.right - thumbSlot.left;
-        if (SLOT_SIZE <= 0) { delete bmp; return {}; }
+        // 1. Dimensiones máximas disponibles en el slot (ancho x alto independizados)
+        const int slotW = thumbSlot.right - thumbSlot.left;
+        const int slotH = thumbSlot.bottom - thumbSlot.top;
+        if (slotW <= 0 || slotH <= 0) { delete bmp; return {}; }
 
-        // 2. Dimensiones ORIGINALES del JPEG guardado (alta resolucion, p.ej.
-        //    256x144 para una captura 1920x1080). Aqui se ESCALA hacia abajo.
+        // 2. Dimensiones originales del JPEG
         const int imgW = static_cast<int>(bmp->GetWidth());
         const int imgH = static_cast<int>(bmp->GetHeight());
         if (imgW <= 0 || imgH <= 0) { delete bmp; return {}; }
 
-        // 3. UNICO factor de escala para X e Y -> aspect ratio NUNCA se deforma.
-        const float scale = (static_cast<float>(SLOT_SIZE) / static_cast<float>(imgW) <
-                             static_cast<float>(SLOT_SIZE) / static_cast<float>(imgH))
-                            ? (static_cast<float>(SLOT_SIZE) / static_cast<float>(imgW))
-                            : (static_cast<float>(SLOT_SIZE) / static_cast<float>(imgH));
+        // 3. Un solo factor de escala uniforme calculando el límite horizontal y vertical
+        const float scaleW = static_cast<float>(slotW) / static_cast<float>(imgW);
+        const float scaleH = static_cast<float>(slotH) / static_cast<float>(imgH);
+        const float scale  = (scaleW < scaleH) ? scaleW : scaleH;
 
-        // 4. Tamano REAL escalado hacia abajo (nuevoAncho/nuevoAlto pueden
-        //    ser MENORES que SLOT_SIZE si la imagen no es 1:1 -> letterbox).
-        int nuevoAncho = static_cast<int>(imgW * scale);
-        int nuevoAlto  = static_cast<int>(imgH * scale);
+        // 4. Tamaño real escalado preservando aspect ratio sin deformar
+        int nuevoAncho = static_cast<int>(imgW * scale + 0.5f);
+        int nuevoAlto  = static_cast<int>(imgH * scale + 0.5f);
         if (nuevoAncho < 1) nuevoAncho = 1;
         if (nuevoAlto  < 1) nuevoAlto  = 1;
-        if (nuevoAncho > SLOT_SIZE) nuevoAncho = SLOT_SIZE;
-        if (nuevoAlto  > SLOT_SIZE) nuevoAlto  = SLOT_SIZE;
+        if (nuevoAncho > slotW) nuevoAncho = slotW;
+        if (nuevoAlto  > slotH) nuevoAlto  = slotH;
 
-        // 5. Posicion: X fija en el borde IZQUIERDO del slot (nunca se mueve,
-        //    siempre pegada a la izquierda). Y centrada verticalmente para
-        //    que la imagen no toque los bordes superior/inferior del slot.
-        //    El slot NO se modifica, solo se reposiciona la imagen dentro.
-        const int x = thumbSlot.left;                          // <-- IZQUIERDA FIJA
-        const int y = thumbSlot.top + (SLOT_SIZE - nuevoAlto) / 2;  // <-- centrado vertical
+        // 5. Posición pegada a la izquierda del slot y centrada verticalmente si fuera necesario
+        const int x = thumbSlot.left;
+        const int y = thumbSlot.top + (slotH - nuevoAlto) / 2;
 
-        // 6. DIBUJAR usando nuevoAncho x nuevoAlto (NUNCA SLOT_SIZE). Asi
-        //    una imagen 256x144 (16:9) baja a 64x36, ocupando todo el ancho
-        //    del slot pero con 14px de letterbox arriba y 14px abajo.
+        // 6. Renderizado de alta calidad con GDI+
         Gdiplus::Graphics g(hdc);
         g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
         g.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
         g.DrawImage(
             bmp,
-            Gdiplus::Rect(x, y, nuevoAncho, nuevoAlto),   // dest: tamano escalado
-            0, 0, imgW, imgH,                            // src:  original
+            Gdiplus::Rect(x, y, nuevoAncho, nuevoAlto),
+            0, 0, imgW, imgH,
             Gdiplus::UnitPixel
         );
 
@@ -406,24 +397,23 @@ namespace AeroClip::UI {
 
         const BOOL hasThumb = !cached.thumbnailJpeg.empty();
 
-        // CAJA FIJA CUADRADA para la miniatura. Siempre kThumbSlotSize x
-        // kThumbSlotSize (64x64), con padding constante. La imagen NUNCA
-        // sale de este recuadro, sin importar el aspect ratio del JPEG.
+        // El alto del slot utiliza todo el espacio útil dentro de la tarjeta fija (74px - 2*5px = 64px)
+        const int slotH = (rc.bottom - rc.top) - (2 * kThumbSlotPad);
         const RECT thumbSlot = {
-            rc.left + kThumbSlotPad,                            // +4
-            rc.top  + kThumbSlotPad,                            // +4
-            rc.left + kThumbSlotPad + kThumbSlotSize,           // +4+64
-            rc.top  + kThumbSlotPad + kThumbSlotSize            // +4+64
+            rc.left + kThumbSlotPad,
+            rc.top  + kThumbSlotPad,
+            rc.left + kThumbSlotPad + kThumbSlotSize,
+            rc.top  + kThumbSlotPad + slotH
         };
 
+        RECT drawnRc = {};
         if (hasThumb) {
-            DrawImageThumb(hdc, thumbSlot, cached.thumbnailJpeg.data(),
-                           static_cast<DWORD>(cached.thumbnailJpeg.size()));
+            drawnRc = DrawImageThumb(hdc, thumbSlot, cached.thumbnailJpeg.data(),
+                                     static_cast<DWORD>(cached.thumbnailJpeg.size()));
         }
 
-        // Texto SIEMPRE a la derecha del slot + kThumbGap. NO usamos el
-        // ancho real de la imagen dibujada -> nunca hay brincos.
-        const int thumbRight = hasThumb ? (thumbSlot.right + kThumbGap) : 0;
+        // Ubica el texto inmediatamente después del borde derecho de la imagen dibujada
+        const int thumbRight = (hasThumb && drawnRc.right > 0) ? drawnRc.right : 0;
 
         if (!cached.text.empty()) {
             DrawTextLabel(hdc, rc, cached.text.c_str(), te, hovered, hasThumb, thumbRight);

@@ -10,16 +10,12 @@ namespace AeroClip::UI {
 
     class ItemRenderer {
     public:
-        // Tamano del SLOT cuadrado y FIJO reservado para la miniatura en cada
-        // item. Dimensionado para LLENAR el alto del item (74px) sin cambiar
-        // el tamano del card. Con kThumbSlotPad=2: 2 + 70 + 2 = 74 (ajuste
-        // perfecto, sin aire desperdiciado). La imagen NUNCA puede salir de
-        // este recuadro y se escala hacia abajo preservando aspect ratio
-        // desde el JPEG guardado a 256px.
-        static constexpr int kThumbSlotSize = 70;
+        // Ancho máximo del slot (para fotos 16:9). El alto se calcula
+        // dinamicamente como kItemHeight - 2*kThumbSlotPad.
+        static constexpr int kThumbSlotSize = 114;
 
-        // Padding desde los bordes del item hasta el slot.
-        static constexpr int kThumbSlotPad = 2;
+        // Margen superior/inferior alrededor de la imagen.
+        static constexpr int kThumbSlotPad = 5;
 
         // Separacion horizontal entre el borde derecho del slot y el texto.
         static constexpr int kThumbGap = 8;
