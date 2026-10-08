@@ -25,38 +25,39 @@ static Core::HotkeyManager          g_hotkey;
 
 static HWND g_hostHwnd = nullptr;
 
-// ---- Tray icon (NUEVO, requerido para mostrar balloon tip) ---------------
+// ---- Balloon / toast compatible con Windows 7 ------------------------
+// En Windows 7 la API legacy de Shell_NotifyIcon muestra el balloon
+// directamente (no lo enruta por Windows Runtime como Win10/11), asi
+// que la tecnica "agregar y borrar inmediatamente" SI funciona: el
+// balloon ya fue encolado por el shell antes de que borremos el icono.
 static constexpr UINT WM_TRAYICON = WM_USER + 10;
-static NOTIFYICONDATAW g_nid = {};
-static BOOL g_trayAdded = FALSE;
-
-static void AddTrayIcon(HWND hwnd) {
-    g_nid = {};
-    g_nid.cbSize          = sizeof(g_nid);
-    g_nid.hWnd            = hwnd;
-    g_nid.uID             = 1;
-    g_nid.uFlags          = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-    g_nid.uCallbackMessage = WM_TRAYICON;
-    g_nid.hIcon = ::LoadIconW(nullptr, IDI_APPLICATION);
-    ::wcscpy_s(g_nid.szTip, L"AeroClip");
-    g_trayAdded = ::Shell_NotifyIconW(NIM_ADD, &g_nid);
-}
-
-static void RemoveTrayIcon() {
-    if (g_trayAdded) {
-        ::Shell_NotifyIconW(NIM_DELETE, &g_nid);
-        g_trayAdded = FALSE;
-    }
-}
 
 static void ShowBalloonTip(LPCWSTR title, LPCWSTR text) {
-    if (!g_trayAdded) return;
-    NOTIFYICONDATAW nid = g_nid;
-    nid.uFlags |= NIF_INFO;
+    if (!g_hostHwnd) return;
+    NOTIFYICONDATAW nid = {};
+    nid.cbSize           = sizeof(nid);
+    nid.hWnd             = g_hostHwnd;
+    nid.uID              = 1;
+    nid.uFlags           = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_INFO;
+    nid.uCallbackMessage = WM_TRAYICON;
+    nid.hIcon            = ::LoadIconW(nullptr, IDI_APPLICATION);
+    ::wcscpy_s(nid.szTip, L"AeroClip");
     ::wcscpy_s(nid.szInfoTitle, title);
     ::wcscpy_s(nid.szInfo, text);
-    nid.dwInfoFlags = NIIF_WARNING;
-    ::Shell_NotifyIconW(NIM_MODIFY, &nid);
+    nid.dwInfoFlags      = NIIF_WARNING;
+    if (::Shell_NotifyIconW(NIM_ADD, &nid)) {
+        // Bombea mensajes para que el shell procese el balloon antes de
+        // borrar el icono (en Win7 basta con un par de PeekMessage).
+        MSG msg;
+        for (int i = 0; i < 5; i++) {
+            if (::PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                ::TranslateMessage(&msg);
+                ::DispatchMessage(&msg);
+            }
+            ::Sleep(600);
+        }
+        ::Shell_NotifyIconW(NIM_DELETE, &nid);
+    }
 }
 // ---------------------------------------------------------------------------
 
@@ -79,7 +80,7 @@ LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         PerformPasteFromIndex(static_cast<int>(wp));
         return 0;
     case WM_TRAYICON:
-        // Click en el icono: por ahora no abrimos menu, asi no estorbamos.
+        // Icono efimero, ignorar cualquier mensaje residual.
         return 0;
     case WM_DESTROY:
         ::PostQuitMessage(0);
@@ -114,11 +115,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
         return 1;
     }
 
-    // Tray icon (para balloon tip cuando se excede kMaxPinned).
-    AddTrayIcon(g_hostHwnd);
-
     if (!g_flyout.Create(hInst, g_buffer, g_theme)) {
-        RemoveTrayIcon();
         return 2;
     }
 
@@ -164,7 +161,6 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
 
     g_hotkey.Unregister();
     g_monitor.Stop();
-    RemoveTrayIcon();
     Gdiplus::GdiplusShutdown(gdiToken);
     return 0;
 }
