@@ -4,6 +4,7 @@
 
 #include "AeroClip.h"
 #include "UI/ThemeEngine.h"
+#include "UI/Localization.h"
 #include "Storage/HistoryBuffer.h"
 #include "Clipboard/ClipboardMonitor.h"
 #include "Core/FlyoutWindow.h"
@@ -133,8 +134,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
     // Callback: cuando TogglePin es rechazado por kMaxPinned, mostramos
     // un balloon tip nativo pidiendo al usuario que desancle uno primero.
     g_buffer.SetOnPinLimitExceeded([]() {
-        ShowBalloonTip(L"AeroClip \x2014 Limite de anclados",
-                       L"Solo puede fijar 4 elementos. Desancla uno para anclar otro.");
+        const std::wstring msg = AeroClip::UI::LocPinLimitMessage(kMaxPinned);
+        ShowBalloonTip(AeroClip::UI::LocPinLimitTitle(), msg.c_str());
     });
 
     // Carga los anclados persistentes del arranque anterior. Esto se hace

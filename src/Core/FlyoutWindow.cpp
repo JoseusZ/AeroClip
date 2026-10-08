@@ -1,5 +1,6 @@
 ﻿#include "Core/FlyoutWindow.h"
 #include "UI/ItemRenderer.h"
+#include "UI/Localization.h"
 #include "AeroClip.h"
 #include <dwmapi.h>
 #include <uxtheme.h>
@@ -61,7 +62,7 @@ namespace AeroClip::Core {
 
         m_hwnd = ::CreateWindowEx(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-            kClass, L"Portapapeles",
+            kClass, AeroClip::UI::LocFlyoutTitle(),
             style,
             x, y, totalW, totalH,
             nullptr, nullptr, hInst, this);
@@ -250,7 +251,7 @@ namespace AeroClip::Core {
         ::SetBkMode(hdc, TRANSPARENT);
         ::SetTextColor(hdc, p.cardTextMuted);
         RECT rc{ kSidePadding, ListAreaTop(), ListAreaRight() - kSidePadding, ListAreaBottom() };
-        ::DrawTextW(hdc, L"Tu portapapales esta vacio.\nCopia algo para empezar.",
+        ::DrawTextW(hdc, AeroClip::UI::LocEmptyState(),
             -1, &rc, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
         (void)rcClient;
         ::SelectObject(hdc, old);
@@ -489,12 +490,17 @@ namespace AeroClip::Core {
                 RECT rcMore = self->MoreButtonRect(item);
                 if (x >= rcMore.left && x < rcMore.right && y >= rcMore.top && y < rcMore.bottom) {
                     HMENU hMenu = ::CreatePopupMenu();
-                    ::AppendMenu(hMenu, MF_STRING, 1, L"Eliminar");
-                    ::AppendMenu(hMenu, MF_STRING, 2, L"Anclar");
+                    const wchar_t* lblDelete  = AeroClip::UI::LocMenuDelete();
+                    const wchar_t* lblClear   = AeroClip::UI::LocMenuClearAll();
+                    const bool pinned = self->m_buffer && self->m_buffer->Get(item).pinned;
+                    const wchar_t* lblPin = pinned ? AeroClip::UI::LocMenuUnpin()
+                                                   : AeroClip::UI::LocMenuPin();
+                    ::AppendMenu(hMenu, MF_STRING, 1, lblDelete);
+                    ::AppendMenu(hMenu, MF_STRING, 2, lblPin);
                     ::AppendMenu(hMenu, MF_SEPARATOR, 0, nullptr);
-                    ::AppendMenu(hMenu, MF_STRING, 3, L"Borrar todo");
+                    ::AppendMenu(hMenu, MF_STRING, 3, lblClear);
 
-                    if (self->m_buffer && self->m_buffer->Get(item).pinned)
+                    if (pinned)
                         ::CheckMenuItem(hMenu, 2, MF_BYCOMMAND | MF_CHECKED);
 
                     POINT pt{ x, y };
@@ -519,12 +525,17 @@ namespace AeroClip::Core {
             int item = self->HitTestItem(x, y);
             if (item >= 0) {
                 HMENU hMenu = ::CreatePopupMenu();
-                ::AppendMenu(hMenu, MF_STRING, 1, L"Eliminar");
-                ::AppendMenu(hMenu, MF_STRING, 2, L"Anclar");
+                const wchar_t* lblDelete  = AeroClip::UI::LocMenuDelete();
+                const wchar_t* lblClear   = AeroClip::UI::LocMenuClearAll();
+                const bool pinned = self->m_buffer && self->m_buffer->Get(item).pinned;
+                const wchar_t* lblPin = pinned ? AeroClip::UI::LocMenuUnpin()
+                                               : AeroClip::UI::LocMenuPin();
+                ::AppendMenu(hMenu, MF_STRING, 1, lblDelete);
+                ::AppendMenu(hMenu, MF_STRING, 2, lblPin);
                 ::AppendMenu(hMenu, MF_SEPARATOR, 0, nullptr);
-                ::AppendMenu(hMenu, MF_STRING, 3, L"Borrar todo");
+                ::AppendMenu(hMenu, MF_STRING, 3, lblClear);
 
-                if (self->m_buffer && self->m_buffer->Get(item).pinned)
+                if (pinned)
                     ::CheckMenuItem(hMenu, 2, MF_BYCOMMAND | MF_CHECKED);
 
                 POINT pt{ x, y };
