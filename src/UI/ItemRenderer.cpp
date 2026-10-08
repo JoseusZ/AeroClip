@@ -9,6 +9,29 @@
 #pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "gdiplus.lib")
 
+// Estructuras ICONDIR/ICONDIRENTRY del formato .ico. No vienen declaradas en
+// <windows.h>, asi que las definimos aqui, alineadas a 1 byte tal y como
+// aparecen en el fichero (formato oficial de Microsoft).
+#pragma pack(push, 1)
+struct IconDirEntry {
+    BYTE bWidth;
+    BYTE bHeight;
+    BYTE bColorCount;
+    BYTE bReserved;
+    WORD wPlanes;
+    WORD wBitsPerPixel;
+    DWORD dwBytesInRes;
+    WORD wResId;
+    WORD wReserved;
+};
+struct IconDir {
+    WORD idReserved;
+    WORD idType;
+    WORD idCount;
+    IconDirEntry idEntries[1]; // se accede como FAM; idCount valida los limites
+};
+#pragma pack(pop)
+
 namespace AeroClip::UI {
 
     RECT ItemRenderer::MoreButtonRect(const RECT& itemRect) {
@@ -237,19 +260,66 @@ namespace AeroClip::UI {
     }
 
     void ItemRenderer::DrawPinBadge(HDC hdc, const RECT& rc) {
-        HBRUSH hb = ::CreateSolidBrush(RGB(255, 192, 0));
-        HPEN   hp = ::CreatePen(PS_SOLID, 1, RGB(120, 80, 0));
-        HBRUSH ob = static_cast<HBRUSH>(::SelectObject(hdc, hb));
-        HPEN   op = static_cast<HPEN>(::SelectObject(hdc, hp));
+        // Icono nativo "tachuela" azul de Windows 7, recurso #5100 en
+        // imageres.dll (el mismo que aparece en "Desanclar este programa de
+        // la barra de tareas"). Se pinta cuando el elemento esta anclado al
+        // historial. Carga especificamente la variante 16x16 8bpp del grupo
+        // de iconos del recurso.
+        HMODULE hRes = ::LoadLibraryExW(L"imageres.dll", nullptr,
+                                        LOAD_LIBRARY_AS_DATAFILE);
+        if (!hRes) return;
 
-        int x = rc.right - 24, y = rc.top + 4;
-        ::Ellipse(hdc, x, y, x + 10, y + 10);
+        HICON hIcon = nullptr;
 
-        ::SelectObject(hdc, op);
-        ::SelectObject(hdc, ob);
-        ::DeleteObject(hp);
-        ::DeleteObject(hb);
-    }
+                // Busca la entrada concreta 16x16 8bpp dentro del grupo de iconos.
+                HRSRC hGrpInfo = ::FindResourceW(hRes, MAKEINTRESOURCE(5100), RT_GROUP_ICON);
+                if (hGrpInfo) {
+                    HGLOBAL hGrpData = ::LoadResource(hRes, hGrpInfo);
+                    const IconDir* pDir = static_cast<const IconDir*>(::LockResource(hGrpData));
+                    if (pDir) {
+                        const IconDirEntry* pEntry = nullptr;
+                        for (WORD i = 0; i < pDir->idCount && i < 12; ++i) {
+                            const IconDirEntry& e = pDir->idEntries[i];
+                            if (e.bWidth == 16 && e.bHeight == 16 && e.wBitsPerPixel == 8) {
+                                pEntry = &e;
+                                break;
+                            }
+                        }
+                        if (pEntry) {
+                            HRSRC hIcoInfo = ::FindResourceW(hRes,
+                                MAKEINTRESOURCE(pEntry->wResId), RT_ICON);
+                            if (hIcoInfo) {
+                                DWORD dwSize = ::SizeofResource(hRes, hIcoInfo);
+                                HGLOBAL hIcoData = ::LoadResource(hRes, hIcoInfo);
+                                void* pIcoData = ::LockResource(hIcoData);
+                                if (pIcoData) {
+                                    hIcon = ::CreateIconFromResourceEx(
+                                        reinterpret_cast<PBYTE>(pIcoData), dwSize,
+                                        TRUE, 0x00030000,
+                                        16, 16, LR_DEFAULTCOLOR);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: si por algun motivo la entrada 16x16 8bpp no existe,
+                // deja que Windows elija la mejor variante disponible.
+                if (!hIcon) {
+                    hIcon = static_cast<HICON>(::LoadImageW(
+                        hRes, MAKEINTRESOURCE(5100),
+                        IMAGE_ICON, 16, 16, 0));
+                }
+
+                if (hIcon) {
+                    int x = rc.right - 22;
+                    int y = rc.top + 2;
+                    ::DrawIconEx(hdc, x, y, hIcon, 16, 16, 0, nullptr, DI_NORMAL);
+                    ::DestroyIcon(hIcon);
+                }
+
+                ::FreeLibrary(hRes);
+            }
 
     void ItemRenderer::DrawMoreButton(HDC hdc, const RECT& rc,
         const ThemeEngine& te, BOOL hovered) {

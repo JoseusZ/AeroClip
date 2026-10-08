@@ -92,8 +92,7 @@ namespace AeroClip::Storage {
         if (bih->biWidth > 8192 || cy > 8192) return out;
         BOOL srcBottomUp = (bih->biHeight > 0);
 
-        // 1) Construir DIB section TOP-DOWN (biHeight negativo) para que GDI+
-        //    no haga doble flip al envolver el HBITMAP.
+        // Construct a top-down DIB section (negative biHeight) so that GDI+ does not perform a double flip when wrapping the HBITMAP.
         BITMAPINFO bmi{};
         bmi.bmiHeader = *bih;
         bmi.bmiHeader.biCompression = BI_RGB;
@@ -104,28 +103,27 @@ namespace AeroClip::Storage {
         HBITMAP hbm = ::CreateDIBSection(nullptr, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
         if (!hbm || !bits) { if (hbm) ::DeleteObject(hbm); return out; }
 
-        // 2) Copiar pixeles respetando orientacion.
+        //Copy pixels while preserving orientation.
         DWORD headerSize = bih->biSize + bih->biClrUsed * sizeof(RGBQUAD);
         LONG rowBytes = ((bih->biWidth * bih->biBitCount + 31) / 32) * 4;
         SIZE_T imgBytes = (SIZE_T)rowBytes * cy;
         if (headerSize + imgBytes > cbDib) { ::DeleteObject(hbm); return out; }
         const BYTE* src = dib + headerSize;
         if (srcBottomUp) {
-            // bottom-up -> top-down: invertir filas
+            // bottom-up -> top-down: reverse rows
             BYTE* dst = static_cast<BYTE*>(bits);
             for (LONG y = 0; y < cy; ++y) {
                 memcpy(dst + y * rowBytes, src + (cy - 1 - y) * rowBytes, rowBytes);
             }
         } else {
-            // top-down: copiar tal cual
+         
             memcpy(bits, src, imgBytes);
         }
 
-        // 3) HBITMAP -> Gdiplus::Bitmap
+        
         Gdiplus::Bitmap srcBmp(hbm, nullptr);
         if (srcBmp.GetLastStatus() != Gdiplus::Ok) { ::DeleteObject(hbm); return out; }
 
-        // 4) Render 48x48 a color (sin conversion a grises).
         const int kSide = 48;
         Gdiplus::Bitmap thumb(kSide, kSide, PixelFormat24bppRGB);
         Gdiplus::Graphics g(&thumb);
@@ -135,7 +133,7 @@ namespace AeroClip::Storage {
         g.DrawImage(&srcBmp, 0, 0, kSide, kSide);
         ::DeleteObject(hbm);
 
-        // 5) Encode a JPEG q50 directo (color).
+
         CLSID jpegClsid;
         if (GetEncoderClsidJpeg(&jpegClsid) < 0) return out;
 
@@ -148,7 +146,7 @@ namespace AeroClip::Storage {
         enc.Parameter[0].Guid = Gdiplus::EncoderQuality;
         enc.Parameter[0].Type = Gdiplus::EncoderParameterValueTypeLong;
         enc.Parameter[0].NumberOfValues = 1;
-        ULONG q = 50;
+        ULONG q = 45;
         enc.Parameter[0].Value = &q;
 
         if (thumb.Save(stream, &jpegClsid, &enc) != Gdiplus::Ok) return out;
@@ -178,10 +176,7 @@ namespace AeroClip::Storage {
         m_seq = 0;
         m_renderReady = FALSE;
 
-        // Sweep de huerfanos de cualquier PID anterior. Es seguro borrar
-        // todos los *.bin en m_tempDir al iniciar: cada archivo lleva
-        // <pid>_<seq>.bin y nuestro PID es unico, asi que cualquier archivo
-        // que no sea nuestro es huerfano de un proceso muerto.
+
         CleanupOrphanTemps();
     }
 
@@ -193,9 +188,7 @@ namespace AeroClip::Storage {
             }
             m_items.clear();
         }
-        // Sweep final por PID propio (incluye anclados: al terminar el
-        // proceso se borra incluso lo anclado, porque la persistencia
-        // entre sesiones no es un requisito).
+
         CleanupByCurrentPid();
         ::DeleteCriticalSection(&m_cs);
         ::DeleteCriticalSection(&m_cacheCs);
@@ -221,7 +214,7 @@ namespace AeroClip::Storage {
     }
 
     void HistoryBuffer::DestroyItem(HistoryItem& it) {
-        // Si tiene archivo temporal y NO esta anclado, borrarlo.
+        // If it has a temporary file and is NOT pinned, it is deleted.
         if (it.bHasTemp && it.szTempPath[0] && !it.pinned) {
             ::DeleteFileW(it.szTempPath);
         }
@@ -262,7 +255,7 @@ namespace AeroClip::Storage {
     BOOL HistoryBuffer::IsDuplicate(const HistoryItem& item, ItemKind kind, const void* pData, DWORD cbData) {
         if (item.kind != kind || item.cbData != cbData) return FALSE;
 
-        // Imagen: comparacion exige leer del disco + CryptUnprotectMemory + LZ4.
+        // Image: comparison requires reading from disk + CryptUnprotectMemory + LZ4.
         if (item.kind == ItemKind::Image && item.bHasTemp && item.cbLz4 > 0) {
             std::vector<BYTE> storedDpapi;
             DWORD cbOriginal = 0;
@@ -305,9 +298,9 @@ namespace AeroClip::Storage {
     int HistoryBuffer::Add(ItemKind kind, const void* pData, DWORD cbData) {
         if (!pData || cbData == 0) return -1;
 
-        // Guardia de tamano: evita que un DIB de 50 MB o un volcado de
-        // 20 MB inche la RAM del proceso. Mantenemos la filosofia Win7
-        // native: 15 items, footprint acotado.
+        // Size guard: prevents a 50 MB DIB or a 20 MB dump
+        // from bloating the process's RAM. Maintains the Win7 philosophy (I hope, lol)
+        // native: 15 items, limited footprint.
         DWORD cbLimit = (kind == ItemKind::Image) ? kMaxImageBytes : kMaxTextBytes;
         if (cbData > cbLimit) return -1;
 
@@ -339,19 +332,19 @@ namespace AeroClip::Storage {
         ::GetSystemTimeAsFileTime(&it.ftCaptured);
 
         if (kind == ItemKind::Image) {
-            // 1) LZ4 (sin perdida)
+            // LZ4 (lossless)
             int cbLz4 = 0;
             LPVOID lz4 = Lz4Compress(pData, (int)cbData, cbLz4);
             if (!lz4) return -1;
 
-            // 2) DPAPI sobre el bloque LZ4
+            // DPAPI over the LZ4 block
             SIZE_T cbEnc = 0;
             LPVOID enc = Protect(lz4, (DWORD)cbLz4, cbEnc);
             ::SecureZeroMemory(lz4, cbLz4);
             ::HeapFree(::GetProcessHeap(), 0, lz4);
             if (!enc) return -1;
 
-            // 3) Persiste en disco. pData NO queda en RAM (pData = nullptr).
+            // Persists to disk. pData does NOT remain in RAM (pData = nullptr).
             WCHAR path[MAX_PATH] = {};
             if (!PersistImageToTemp(enc, (DWORD)cbEnc, cbData,
                                      path, MAX_PATH)) {
@@ -370,7 +363,7 @@ namespace AeroClip::Storage {
             it.bHasTemp = TRUE;
         }
         else {
-            // Texto: en RAM cifrado (sin cambio respecto a v1).
+            // Encrypted text in RAM
             SIZE_T cbAlloc = 0;
             LPVOID enc = Protect(pData, cbData, cbAlloc);
             if (!enc) return -1;
@@ -438,8 +431,8 @@ namespace AeroClip::Storage {
     }
 
     // -------------------------------------------------------------------
-    // Disk backing: persistencia y lectura del bloque LZ4+DPAPI en disco
-    // -------------------------------------------------------------------
+// Disk backing: persistence and reading of the LZ4+DPAPI block on disk
+// -------------------------------------------------------------------
 
     BOOL HistoryBuffer::PersistImageToTemp(const void* pCompressed, DWORD cbCompressed,
                                             DWORD cbOriginal,
@@ -533,7 +526,7 @@ namespace AeroClip::Storage {
     }
 
     // -------------------------------------------------------------------
-    // Cleanup: huerfanos (cualquier PID) + por PID propio (en shutdown)
+    // Cleanup: orphans (any PID) + by own PID (during shutdown)
     // -------------------------------------------------------------------
 
     static void DeleteMatching(const WCHAR* dir, const WCHAR* pattern) {
@@ -566,8 +559,8 @@ namespace AeroClip::Storage {
     }
 
     // -------------------------------------------------------------------
-    // Cache de miniaturas (JPEG, baja calidad, ~1.5 KB)
-    // -------------------------------------------------------------------
+// Thumbnail cache (JPEG, low quality, ~1.5 KB)
+// -------------------------------------------------------------------
 
     void HistoryBuffer::ReleaseRender() {
         CriticalSectionLock lock(m_cacheCs);
@@ -589,11 +582,6 @@ namespace AeroClip::Storage {
         return m_cache[index];
     }
 
-    // Preparar cache para todos los items visibles. Para texto: copia el
-    // descifrado. Para imagen: lee de disco + descomprime + escala a 48x48
-    // + JPEG q50 (grises). El detalle de la miniatura se implementa en
-    // el siguiente todo (thumbnail-jpeg); por ahora el campo se deja
-    // vacio para imagenes.
     void HistoryBuffer::PrepareRender() {
         std::vector<RenderItem> newCache;
         {
@@ -605,12 +593,9 @@ namespace AeroClip::Storage {
                     DWORD cbDec = 0;
                     LPVOID dec = DecryptCopyInternal(it, &cbDec);
                     if (dec) {
-                        // Texto: copiar bytes descifrados a wstring (UTF-8
-                        // no es valido en Windows clipboard como wide).
-                        // Se asume wchar_t en el clipboard.
+
                         const wchar_t* wsz = static_cast<const wchar_t*>(dec);
                         size_t cw = cbDec / sizeof(wchar_t);
-                        // truncar a primer nulo
                         size_t cch = wcsnlen(wsz, cw);
                         newCache[i].text.assign(wsz, cch);
                         ::SecureZeroMemory(dec, cbDec);
@@ -623,7 +608,7 @@ namespace AeroClip::Storage {
                         std::vector<BYTE> storedDpapi;
                         DWORD cbOriginal = 0;
                         if (LoadImageFromTemp(it, storedDpapi, &cbOriginal)) {
-                            // 1) Desproteger DPAPI para obtener LZ4 crudo.
+                           
                             SIZE_T cbAligned = ((SIZE_T)storedDpapi.size() + 15) & ~(SIZE_T)15;
                             LPVOID lz4 = ::HeapAlloc(::GetProcessHeap(),
                                                      HEAP_ZERO_MEMORY, cbAligned);
@@ -633,11 +618,7 @@ namespace AeroClip::Storage {
                                 if (::CryptUnprotectMemory(lz4,
                                                             (DWORD)cbAligned,
                                                             CRYPTPROTECTMEMORY_SAME_PROCESS)) {
-                                    // 2) LZ4 descomprimir. Usar it.cbLz4 como
-                                    // tamano real de entrada, NO cbAligned
-                                    // (el padding a 16 de DPAPI contiene
-                                    // ceros que LZ4 interpretaria como
-                                    // literales y reventaria la salida).
+
                                     int cbDib = 0;
                                     LPVOID dib = Lz4Decompress(lz4,
                                                                (int)it.cbLz4,

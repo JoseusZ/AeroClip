@@ -10,8 +10,7 @@ namespace AeroClip::Storage {
 
     struct RenderItem {
         std::wstring  text;
-        // 48x48 grayscale JPEG-quality 50 (~1.5 KB por item). Solo presente
-        // para items de tipo Image. Para texto queda vacio.
+        // 48x48 grayscale JPEG-quality 50 (~1.5 KB por item).
         std::vector<BYTE> thumbnailJpeg;
     };
 
@@ -20,49 +19,43 @@ namespace AeroClip::Storage {
         HistoryBuffer();
         ~HistoryBuffer();
 
-        // --- Operaciones thread-safe (CRITICAL_SECTION) -----------------------
+        // Thread-safe operations (CRITICAL_SECTION) 
         int  Add(ItemKind kind, const void* pData, DWORD cbData);
         BOOL Remove(int index);
         int  RemoveUnpinned();
         BOOL TogglePin(int index);
 
         int         Count() const;
-        HistoryItem Get(int index) const;   // copia por valor (thread-safe)
+        HistoryItem Get(int index) const;   // copy-by-value (thread-safe)
         BOOL        IsPinned(int index) const;
 
-        // Compara el contenido con el item mas reciente para evitar duplicados.
+        // Compare the content with the most recent item to avoid duplicates.
         BOOL IsSameAsLast(const void* pData, DWORD cbData) const;
 
-        // --- DPAPI ------------------------------------------------------------
-        // Descifra una copia del item. Devuelve buffer HeapAlloc (caller HeapFree).
+        // DPAPI 
+        // Decrypts a copy of the item. Returns a HeapAlloc buffer (caller must use HeapFree).
         static LPVOID DecryptCopy(const AeroClip::HistoryItem& item, DWORD* pcbOut);
 
-        // --- Render cache (evita descifrar en WM_PAINT) ----------------------
+        // Render cache (avoids decoding during WM_PAINT)
         void PrepareRender();
         void ReleaseRender();
         const RenderItem& GetCached(int index) const;
         BOOL IsRenderReady() const;
 
-        // --- Disk backing (imagenes) -----------------------------------------
-        // Persiste un bloque LZ4+DPAPI a %TEMP%\AeroClip\<pid>_<seq>.bin.
-        // Escribe header [DWORD cbOriginal][DWORD cbCompressed][BYTES].
-        // Devuelve TRUE si el archivo quedo en outPath.
-        // No-static: usa m_tempDir/m_seq.
+        // Disk backing (images)
         BOOL  PersistImageToTemp(const void* pCompressed, DWORD cbCompressed,
                                   DWORD cbOriginal, WCHAR* outPath, DWORD cchOutPath);
-        // Lee el archivo y devuelve una copia del bloque LZ4+DPAPI en outCompressed
-        // (no decifra). Devuelve FALSE si el archivo no existe o esta corrupto.
+        // Reads the file and returns a copy of the LZ4+DPAPI block in outCompressed.
+        // (does not decrypt). Returns FALSE if the file does not exist or is corrupt.
         static BOOL  LoadImageFromTemp(const HistoryItem& item,
                                         std::vector<BYTE>& outCompressed,
                                         DWORD* pcbOriginal);
-        // Borra el archivo temporal asociado (no decifra nada).
+        // Deletes the associated temporary file (does not decrypt anything).
         static void  DeleteImageTemp(const HistoryItem& item);
 
-        // --- Cleanup --------------------------------------------------------
-        // Borra todos los *.bin de %TEMP%\AeroClip\ (huerfanos de cualquier PID).
-        // Llamar al iniciar el proceso.
+        // Cleanup 
         void CleanupOrphanTemps();
-        // Borra los archivos de PID propio (al cerrar el proceso).
+        // Deletes the own PID files (upon closing the process).
         void CleanupByCurrentPid();
 
     private:
@@ -72,14 +65,14 @@ namespace AeroClip::Storage {
         mutable CRITICAL_SECTION m_cs;
         mutable CRITICAL_SECTION m_cacheCs;
 
-        // Helpers internos
+        // Internal helpers 
         static LPVOID Protect(const void* inData, DWORD cbData, SIZE_T& cbOut);
         static void   DestroyItem(HistoryItem& it);
         static LPVOID DecryptCopyInternal(const HistoryItem& item, DWORD* pcbOut);
         static BOOL   IsDuplicate(const HistoryItem& item, ItemKind kind,
                                   const void* pData, DWORD cbData);
 
-        // Disk backing: directorio %TEMP%\AeroClip\ y secuencia monotnica por PID
+        // Disk backing
         WCHAR m_tempDir[MAX_PATH] = {};
         DWORD m_seq = 0;
     };

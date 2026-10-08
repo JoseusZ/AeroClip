@@ -70,19 +70,13 @@ namespace AeroClip::Core {
 
         ::SetWindowLongPtr(m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
         if (m_te) m_te->Refresh();
-
-        // Scrollbar NATIVA como control hijo (SBS_VERT). La dibujara Windows
-        // con el chrome del tema activo (Aero glass / Basic / Classic).
-        // La posicionamos manualmente para que no se desborde por encima del
-        // titulo DWM en Aero ni se salga del area cliente.
         m_hScroll = ::CreateWindowEx(
             0, L"SCROLLBAR", nullptr,
             SBS_VERT | WS_CHILD | WS_VISIBLE,
-            0, 0, kScrollBarWidth, 100,  // posicion inicial; UpdateScrollBar la corrige
+            0, 0, kScrollBarWidth, 100,  // initial position; UpdateScrollBar fixes it
             m_hwnd, nullptr, hInst, nullptr);
         if (m_hScroll) {
-            // Por defecto los scrollbars llegan al tope y no se ocultan cuando
-            // el rango esta vacio. Asi garantizamos visibilidad consistente.
+            // By default, the scrollbars extend to the maximum extent and do not hide when the range is empty.
             ::SetScrollRange(m_hScroll, SB_CTL, 0, 1, TRUE);
         }
 
@@ -202,9 +196,7 @@ namespace AeroClip::Core {
         m_scrollY = 0;
         RecalcScrollBounds();
         UpdateScrollBar();
-        // Asegura que las miniaturas estan calculadas para el estado
-        // actual del buffer (los items pudieron haberse añadido antes
-        // de que la flyout existiera o se abriera por primera vez).
+        // Ensures that the thumbnails are calculated for the current state of the buffer
         if (m_buffer) m_buffer->PrepareRender();
         ::ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
         ::SetForegroundWindow(m_hwnd);
@@ -217,9 +209,7 @@ namespace AeroClip::Core {
     }
 
     void FlyoutWindow::OnClipboardUpdate() {
-        // Regenera la cache de miniaturas (incluye descomprimir LZ4 y
-        // construir JPEG para imagenes). Antes este codigo descifraba
-        // el DIB original en cada WM_PAINT -> pico de ~3 MB por paint.
+        // Regenerates the thumbnail cache (includes decompressing LZ4 and building JPEGs for images)
         if (m_buffer) m_buffer->PrepareRender();
         if (m_hwnd && ::IsWindowVisible(m_hwnd)) {
             ::InvalidateRect(m_hwnd, nullptr, FALSE);
@@ -227,9 +217,7 @@ namespace AeroClip::Core {
     }
 
     void FlyoutWindow::Refresh() {
-        // Llamado por main.cpp tras Remove / TogglePin / RemoveUnpinned
-        // para que la flyout repinte inmediatamente aunque no haya habido
-        // un cambio de clipboard.
+        // Llamado por main.cpp tras Remove / TogglePin / RemoveUnpinned para que la flyout repinte inmediatamente
         RecalcScrollBounds();
         if (m_buffer) m_buffer->PrepareRender();
         if (m_hwnd && ::IsWindowVisible(m_hwnd)) {
@@ -273,9 +261,7 @@ namespace AeroClip::Core {
             Storage::RenderItem& out) {
         out.text.clear();
         out.thumbnailJpeg.clear();
-        // Implementacion eliminada (Opcion C). Las miniaturas JPEG se
-        // generan en HistoryBuffer::PrepareRender(); aqui solo usamos
-        // GetCached(i) que devuelve el RenderItem precomputado.
+  
         (void)hi;
         (void)out;
     }
@@ -287,7 +273,7 @@ namespace AeroClip::Core {
         ::SetBkMode(hdc, TRANSPARENT);
         if (n == 0) { PaintEmptyState(hdc, rcClient); return; }
 
-        // Clip al area de lista para no pintar fuera (deja sitio a la scrollbar nativa).
+        // Clip to the list area to avoid painting outside (leaving room for the native scrollbar).
         HRGN rgn = ::CreateRectRgn(kSidePadding, top,
                                     ListAreaRight() - kSidePadding, bot);
         ::SelectClipRgn(hdc, rgn);
@@ -355,36 +341,26 @@ namespace AeroClip::Core {
         if (!m_hwnd || !m_hScroll) return;
         int n = m_buffer ? m_buffer->Count() : 0;
 
-        // Posicionar el control. y depende del tema para no chocar con el
-        // titulo DWM en Aero. h cubre hasta el borde inferior de la ventana.
+        // Position the control—and it depends on the subject matter—so as not to clash with it.
+        
         int sbX = m_clientW - kScrollBarWidth;
         int sbY = 0;
         if (m_te && m_te->Current() == AeroClip::Theme::Aero) {
-            // Debajo del titulo que DWM extiende dentro del area cliente.
+            // Beneath the title that DWM displays within the client area.
             sbY = CaptionHeight();
         }
         int sbH = m_clientH - sbY;
-        if (sbH < 16) sbH = 16; // minimo razonable para que se vea
+        if (sbH < 16) sbH = 16; 
         ::MoveWindow(m_hScroll, sbX, sbY, kScrollBarWidth, sbH, TRUE);
 
         if (n == 0) {
-            // Sin contenido: ocultar el control.
+            
             ::ShowWindow(m_hScroll, SW_HIDE);
             return;
         }
         ::ShowWindow(m_hScroll, SW_SHOW);
 
-        // El SCROLLBAR nativo de Win32 calcula el tamano y posicion del
-        // thumb de forma inteligente a partir de:
-        //   nMin, nMax : rango total del contenido (en pixeles aqui).
-        //   nPage      : tamano del viewport visible.
-        //   nPos       : posicion actual de scroll.
-        // Formula: thumb_size = nPage / (nMax - nMin + 1) * track.
-        //          thumb_pos  = nPos / (nMax - nMin - nPage + 1) * (track - thumb).
-        // Usando nMax = ContentHeight(n) - 1 (alto total del contenido, no
-        // solo el overflow), el thumb refleja automaticamente la proporcion
-        // visible/total: con muchos items -> thumb pequeno; con pocos -> thumb
-        // grande. Sin asignar valores rigidos: Win32 lo deduce del contenido.
+        // SCROLLBAR native of Win32 
         int content = ContentHeight(n);
         int visible = ListAreaHeight();
         SCROLLINFO si = {};
@@ -414,7 +390,7 @@ namespace AeroClip::Core {
         }
 
         PaintItems(hdc, rcClient);
-        // La scrollbar la dibuja el SO (WS_VSCROLL con el chrome del tema activo).
+        // The scrollbar is drawn by the OS (WS_VSCROLL with the active theme's chrome).
     }
 
     LRESULT CALLBACK FlyoutWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -441,9 +417,7 @@ namespace AeroClip::Core {
                         }
 
                 case WM_VSCROLL: {
-                            // Scrollbar NATIVA (control hijo SBS_VERT). El SO la
-                            // dibuja con el chrome del tema activo y emite este
-                            // mensaje cuando el usuario la usa.
+
                             int n = self->m_buffer ? self->m_buffer->Count() : 0;
                             int maxScroll = self->MaxScrollY(n);
                             int newY = self->m_scrollY;
@@ -475,11 +449,6 @@ namespace AeroClip::Core {
                         }
 
                 case MSG_CLIPBOARD_UPDATED: {
-                    // ClipboardMonitor -> PostMessage(hwnd, MSG_CLIPBOARD_UPDATED).
-                    // Regenera la cache de miniaturas (incluye descomprimir LZ4 y
-                    // construir JPEG para imagenes). Sin este handler, los items
-                    // se añaden al buffer pero PrepareRender nunca corre y
-                    // GetCached(i) devuelve cache vacia -> solo "Abc" placeholder.
                     self->RecalcScrollBounds();
                     if (self->m_buffer) self->m_buffer->PrepareRender();
                     ::InvalidateRect(hwnd, nullptr, FALSE);
@@ -579,7 +548,7 @@ namespace AeroClip::Core {
             self->m_scrollY -= delta / WHEEL_DELTA * step;
             if (self->m_scrollY < 0) self->m_scrollY = 0;
             if (self->m_scrollY > maxScroll) self->m_scrollY = maxScroll;
-            // Sincronizar la scrollbar nativa (mover el thumb visualmente).
+            // Synchronize the native scrollbar (move the thumb visually).
             SCROLLINFO si = {};
             si.cbSize = sizeof(si);
             si.fMask  = SIF_POS;
@@ -631,26 +600,6 @@ namespace AeroClip::Core {
             if (wp == FlyoutWindow::kThemeCoalesceTimerId) {
                 ::KillTimer(hwnd, FlyoutWindow::kThemeCoalesceTimerId);
                 if (self->m_te) self->m_te->Refresh();
-                // CRITICAL ORDER with DWM synchronization:
-                //   1) DisableAeroCaption -> disables DwmExtend... in DWM
-                //   2) DwmFlush -> WAITS for DWM to finish processing
-                //      DisableAeroCaption. Without this, the subsequent
-                //      WM_NCCALCSIZE we trigger might execute
-                //      BEFORE DWM has applied the zero margin,
-                //      and Windows would calculate the non-client area with the
-                //      extension still active (the client area reserves
-                //      CaptionHeight() extra px for DWM glass that will
-                //      no longer exist). Visible result: a thick 3D
-                //      "Classic" border appears where the native "History"
-                //      caption should be (what the user called
-                //      "thick border in the top-left corner"). 
-                //   3) SWP_FRAMECHANGED without resize -> forces WM_NCCALCSIZE
-                //      so Windows recalculates the non-client area
-                //      with DWM now synchronized. 
-                //   4) ReflowForTheme -> changes total size using
-                //      AdjustWindowRectEx with consistent metrics. 
-                //   5) EnableAeroCaption -> re-applies extension only if the
-                //      new theme is Aero.
                 self->DisableAeroCaption();
                 ::DwmFlush();
                 ::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,

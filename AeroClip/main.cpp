@@ -38,9 +38,7 @@ LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == kHotkeyId) g_flyout.Toggle();
         return 0;
     case MSG_PERFORM_PASTE:
-        // Llega tras click en una tarjeta: el flyout ya esta oculto, asi
-        // que el foco esta volviendo a la app previa y SendInput llega al
-        // destino previsto en lugar de Sigue blo blo blo.
+        
         PerformPasteFromIndex(static_cast<int>(wp));
         return 0;
     case WM_DESTROY:
@@ -64,7 +62,7 @@ static BOOL CreateHostWindow(HINSTANCE hInst) {
 }
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
-    // GDI+ es necesario para las miniaturas JPEG (Opcion C).
+
     Gdiplus::GdiplusStartupInput gdiStartupIn{};
     ULONG_PTR gdiToken = 0;
     if (Gdiplus::GdiplusStartup(&gdiToken, &gdiStartupIn, nullptr) != Gdiplus::Ok) {
@@ -84,9 +82,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
         [&](int idx) { g_buffer.TogglePin(idx);   g_flyout.Refresh(); },
         [&]()       { g_buffer.RemoveUnpinned();  g_flyout.Refresh(); });
 
-    // Click en una tarjeta -> diferir el pegado al host HWND. Asi el
-    // flyout termina de ocultarse, el foco vuelve a la app previa, y
-    // SendInput llega al destino correcto sin races con WM_KILLFOCUS.
+    
     g_flyout.SetOnSelect([](int idx) {
         if (g_hostHwnd) ::PostMessage(g_hostHwnd, MSG_PERFORM_PASTE,
                                       static_cast<WPARAM>(idx), 0);

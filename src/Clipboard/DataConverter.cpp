@@ -18,11 +18,6 @@ namespace AeroClip::Clipboard {
         LPCWSTR src = static_cast<LPCWSTR>(::GlobalLock(h));
         if (!src) return FALSE;
 
-        // FIX dedup texto: GlobalSize devuelve el tamano del bloque (puede
-        // estar redondeado al alza y contener bytes basura tras el \0), por
-        // lo que dos copias identicas de "awd" daban cbData distintos y
-        // esquivaban el IsDuplicate por la guarda `cbData != cbData`.
-        // Usamos la longitud real del string terminado en \0.
         SIZE_T chars = 0;
         while (src[chars] != 0) ++chars;
         SIZE_T sizeBytes = (chars + 1) * sizeof(WCHAR);
@@ -83,17 +78,12 @@ namespace AeroClip::Clipboard {
                 HBITMAP hbmp = reinterpret_cast<HBITMAP>(hh);
         if (!hbmp) return FALSE;
 
-        // 1) Tamano del DDB.
         BITMAP bmp{};
         if (::GetObject(hbmp, sizeof(bmp), &bmp) == 0) return FALSE;
         if (bmp.bmWidth <= 0 || bmp.bmHeight <= 0 || bmp.bmPlanes != 1) return FALSE;
         LONG w = bmp.bmWidth;
         LONG h = bmp.bmHeight;
         WORD bpp = (bmp.bmBitsPixel == 32 || bmp.bmBitsPixel == 16) ? bmp.bmBitsPixel : 24;
-
-        // 2) Reservar DIB destino (24/32 bpp BI_RGB, top-down positivo -> se
-        //    reescribe abajo como bottom-up para que el resto del flujo lo
-        //    siga tratando como CF_DIB normal).
         BITMAPINFOHEADER bih{};
         bih.biSize = sizeof(bih);
         bih.biWidth = w;
@@ -114,8 +104,6 @@ namespace AeroClip::Clipboard {
         ::ReleaseDC(nullptr, hdc);
         if (!hdib || !dibBits) { if (hdib) ::DeleteObject(hdib); return FALSE; }
 
-        // 3) DDB -> DIB. GetDIBits con DIB_RGB_COLORS rellena dibBits con el
-        //    formato pedido.
         HDC hdc2 = ::CreateCompatibleDC(nullptr);
         if (!hdc2) { ::DeleteObject(hdib); return FALSE; }
         HGDIOBJ prev = ::SelectObject(hdc2, hbmp);
@@ -124,8 +112,7 @@ namespace AeroClip::Clipboard {
         ::DeleteDC(hdc2);
         if (scanned == 0) { ::DeleteObject(hdib); return FALSE; }
 
-        // 4) Empaquetar BITMAPINFOHEADER + pixeles en un buffer contiguo
-        //    ANTES de liberar dibBits (DeleteObject lo liberaria).
+        // Packages BITMAPINFOHEADER + pixels into a contiguous buffer.
         LONG rowBytes = ((w * bpp + 31) / 32) * 4;
         SIZE_T imgBytes = (SIZE_T)rowBytes * h;
         SIZE_T total = sizeof(BITMAPINFOHEADER) + imgBytes;

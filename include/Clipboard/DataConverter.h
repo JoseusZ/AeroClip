@@ -5,13 +5,13 @@
 
 namespace AeroClip::Clipboard {
 
+    // Fallback: converts a CF_BITMAP (DDB) to DIB (CF_DIB) in memory.
+    // Windows Print Screen typically places the capture as CF_BITMAP
+    // without a corresponding CF_DIB; without a fallback, the capture is ignored.
     class DataConverter {
     public:
         static BOOL ReadUnicodeText(LPCVOID* ppOut, DWORD* pcbOut);
         static BOOL ReadDibImage(LPCVOID* ppOut, DWORD* pcbOut);
-        // Fallback: convierte un CF_BITMAP (DDB) a DIB (CF_DIB) en memoria.
-        // Print Screen de Windows suele colocar la captura como CF_BITMAP
-        // sin companante de CF_DIB; sin fallback la captura se ignora.
         static BOOL ReadBitmapAsDIB(LPCVOID* ppOut, DWORD* pcbOut);
     };
 

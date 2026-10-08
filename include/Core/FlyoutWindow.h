@@ -29,9 +29,8 @@ namespace AeroClip::Core {
 
         void SetOnSelect(std::function<void(int idx)> onSelect);
 
-                // Repinta la flyout tras un cambio externo al buffer (Remove, pin,
-                // clear all). Equivalente a un MSG_CLIPBOARD_UPDATED pero disparado
-                // por el llamador.
+        // Repaints the flyout after an external change to the buffer (Remove, pin, clear all).
+
                 void Refresh();
 
         RECT GetWindowRect() const;
@@ -66,9 +65,6 @@ namespace AeroClip::Core {
 		static constexpr int kSidePadding  = 10;
 		static constexpr int kItemHeight   = 74;
 		static constexpr int kItemGap      = 6;
-		// Reservamos el ancho de la scrollbar NATIVA (la dibuja Windows con el
-		// chrome del tema activo: Aero glass / Basic / Classic). Reservamos
-		// siempre para que los items no queden cubiertos cuando aparece.
 		static constexpr int kScrollBarWidth = 17;
 
         //Actual visual height of the native caption on Windows 7: SM_CYCAPTION returns 0 when DWM composition (Aero) is active.
@@ -101,19 +97,14 @@ namespace AeroClip::Core {
         void PaintItems(HDC hdc, const RECT& rcClient);
         void PaintEmptyState(HDC hdc, const RECT& rcClient);
 
-        // Sincroniza el estado de la scrollbar NATIVA (WS_VSCROLL) con m_scrollY
-        // y el tamano del contenido. Llamar cuando cambian los items o el
-        // tamano de la ventana.
+        // Synchronizes the state of the NATIVE scrollbar (WS_VSCROLL) with m_scrollY
+
         void UpdateScrollBar();
         int  ListAreaRight() const { return m_clientW - kScrollBarWidth; }
 
         void EnableAeroCaption();
         void DisableAeroCaption();
         int  CaptionHeight() const;
-
-        // Recalcula el tamano TOTAL para que el area cliente vuelva a ser
-        // exactamente kFlyoutWidth x kFlyoutHeight (lo necesita al cambiar
-        // de tema porque el chrome nativo cambia de altura).
         void ReflowForTheme();
 
         static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);

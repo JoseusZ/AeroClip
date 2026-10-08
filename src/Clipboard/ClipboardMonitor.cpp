@@ -104,11 +104,6 @@ namespace AeroClip::Clipboard {
 
         void ClipboardMonitor::OnClipboardUpdate() {
             if (!m_buffer) return;
-
-            // Debounce: si el ultimo add exitoso fue hace < 10 ms, suprime. Solo lo
-                    // justo para coalescer los 2-3 WM_CLIPBOARDUPDATE que dispara Windows
-                    // por un unico cambio de clipboard. NO contar ADDs fallidos (paste-back
-                    // propio filtrado por isDuplicate) para no suprimir capturas legitimas.
                     ULONGLONG now = ::GetTickCount64();
                     if (now - s_lastSuccessTick < 10) return;
 
@@ -136,9 +131,7 @@ namespace AeroClip::Clipboard {
                 return added;
             }
 
-            // Imagen: intentar primero CF_DIB (PasteImage de AeroClip, Snip &
-            // Sketch, etc.); si no esta disponible, fallback a CF_BITMAP (Print
-            // Screen de Windows 10/11 pone la mayoria de veces solo CF_BITMAP).
+            // Image: try CF_DIB first (PasteImage from AeroClip, Snip & Sketch, etc.)
             LPCVOID pData = nullptr;
             DWORD cb = 0;
             BOOL got = DataConverter::ReadDibImage(&pData, &cb);
