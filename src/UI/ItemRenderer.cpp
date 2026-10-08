@@ -155,9 +155,12 @@ namespace AeroClip::UI {
         if (nuevoAncho > SLOT_SIZE) nuevoAncho = SLOT_SIZE;
         if (nuevoAlto  > SLOT_SIZE) nuevoAlto  = SLOT_SIZE;
 
-        // 5. Posicion centrada en el slot (letterbox). El slot NO se modifica.
-        const int x = thumbSlot.left + (SLOT_SIZE - nuevoAncho) / 2;
-        const int y = thumbSlot.top  + (SLOT_SIZE - nuevoAlto)  / 2;
+        // 5. Posicion: X fija en el borde IZQUIERDO del slot (nunca se mueve,
+        //    siempre pegada a la izquierda). Y centrada verticalmente para
+        //    que la imagen no toque los bordes superior/inferior del slot.
+        //    El slot NO se modifica, solo se reposiciona la imagen dentro.
+        const int x = thumbSlot.left;                          // <-- IZQUIERDA FIJA
+        const int y = thumbSlot.top + (SLOT_SIZE - nuevoAlto) / 2;  // <-- centrado vertical
 
         // 6. DIBUJAR usando nuevoAncho x nuevoAlto (NUNCA SLOT_SIZE). Asi
         //    una imagen 256x144 (16:9) baja a 64x36, ocupando todo el ancho
