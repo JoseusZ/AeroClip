@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <string>
 #include <vector>
+#include <functional>
 
 namespace AeroClip::Storage {
 
@@ -28,6 +29,19 @@ namespace AeroClip::Storage {
         int         Count() const;
         HistoryItem Get(int index) const;   // copy-by-value (thread-safe)
         BOOL        IsPinned(int index) const;
+
+        // ---- Persistencia de anclados (NUEVO, no rompe API existente) ----
+        // Devuelve el numero de anclados que hay actualmente en memoria.
+        int  PinnedCount() const;
+        // Carga desde %LOCALAPPDATA%\AeroClip\Pinned\*.acp los items
+        // anclados en arranques anteriores y los inserta como pinned=TRUE.
+        // Devuelve cuantos se cargaron con exito. No falla si el directorio
+        // no existe o esta vacio.
+        int  LoadPinnedFromDisk();
+        // Callback opcional: se invoca cuando TogglePin rechaza la operacion
+        // por haberse alcanzado kMaxPinned. El host puede usarlo para
+        // mostrar un globo/balloon al usuario.
+        void SetOnPinLimitExceeded(std::function<void()> cb);
 
         // Compare the content with the most recent item to avoid duplicates.
         BOOL IsSameAsLast(const void* pData, DWORD cbData) const;
@@ -65,7 +79,7 @@ namespace AeroClip::Storage {
         mutable CRITICAL_SECTION m_cs;
         mutable CRITICAL_SECTION m_cacheCs;
 
-        // Internal helpers 
+        // Internal helpers
         static LPVOID Protect(const void* inData, DWORD cbData, SIZE_T& cbOut);
         static void   DestroyItem(HistoryItem& it);
         static LPVOID DecryptCopyInternal(const HistoryItem& item, DWORD* pcbOut);
@@ -75,6 +89,23 @@ namespace AeroClip::Storage {
         // Disk backing
         WCHAR m_tempDir[MAX_PATH] = {};
         DWORD m_seq = 0;
+
+        // ---- Persistencia de anclados (NUEVO) ----
+        // Carpeta: %LOCALAPPDATA% / AeroClip / Pinned
+        WCHAR m_pinDir[MAX_PATH] = {};
+        DWORD m_pinSeq = 0;
+        std::function<void()> m_onPinLimitExceeded;
+
+        // Construye m_pinDir y crea el directorio si hace falta.
+        void   InitPinDir();
+        // Path final del fichero persistente para un item dado.
+        void   GetPinnedFilePath(const HistoryItem& it, WCHAR* out, DWORD cch) const;
+        // Serializa+cifra y escribe a m_pinDir. TRUE si OK.
+        BOOL   SavePinnedToDisk(const HistoryItem& it);
+        // Borra el fichero persistente asociado a un item (si existe).
+        void   DeletePinnedFromDisk(const HistoryItem& it);
+        // Lee un fichero .acp y rellena un HistoryItem. FALSE si falla.
+        BOOL   LoadPinnedFromFile(const WCHAR* path, HistoryItem& out);
     };
 
 } // namespace AeroClip::Storage

@@ -11,7 +11,9 @@
 #include "Utils/InputInjector.h"
 #include <objbase.h>
 #include <gdiplus.h>
+#include <shellapi.h>
 #pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "shell32.lib")
 
 using namespace AeroClip;
 
@@ -22,6 +24,41 @@ static Core::FlyoutWindow           g_flyout;
 static Core::HotkeyManager          g_hotkey;
 
 static HWND g_hostHwnd = nullptr;
+
+// ---- Tray icon (NUEVO, requerido para mostrar balloon tip) ---------------
+static constexpr UINT WM_TRAYICON = WM_USER + 10;
+static NOTIFYICONDATAW g_nid = {};
+static BOOL g_trayAdded = FALSE;
+
+static void AddTrayIcon(HWND hwnd) {
+    g_nid = {};
+    g_nid.cbSize          = sizeof(g_nid);
+    g_nid.hWnd            = hwnd;
+    g_nid.uID             = 1;
+    g_nid.uFlags          = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    g_nid.uCallbackMessage = WM_TRAYICON;
+    g_nid.hIcon = ::LoadIconW(nullptr, IDI_APPLICATION);
+    ::wcscpy_s(g_nid.szTip, L"AeroClip");
+    g_trayAdded = ::Shell_NotifyIconW(NIM_ADD, &g_nid);
+}
+
+static void RemoveTrayIcon() {
+    if (g_trayAdded) {
+        ::Shell_NotifyIconW(NIM_DELETE, &g_nid);
+        g_trayAdded = FALSE;
+    }
+}
+
+static void ShowBalloonTip(LPCWSTR title, LPCWSTR text) {
+    if (!g_trayAdded) return;
+    NOTIFYICONDATAW nid = g_nid;
+    nid.uFlags |= NIF_INFO;
+    ::wcscpy_s(nid.szInfoTitle, title);
+    ::wcscpy_s(nid.szInfo, text);
+    nid.dwInfoFlags = NIIF_WARNING;
+    ::Shell_NotifyIconW(NIM_MODIFY, &nid);
+}
+// ---------------------------------------------------------------------------
 
 static void PerformPasteFromIndex(int idx) {
         if (idx < 0 || idx >= g_buffer.Count()) return;
@@ -38,8 +75,11 @@ LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == kHotkeyId) g_flyout.Toggle();
         return 0;
     case MSG_PERFORM_PASTE:
-        
+
         PerformPasteFromIndex(static_cast<int>(wp));
+        return 0;
+    case WM_TRAYICON:
+        // Click en el icono: por ahora no abrimos menu, asi no estorbamos.
         return 0;
     case WM_DESTROY:
         ::PostQuitMessage(0);
@@ -74,7 +114,13 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
         return 1;
     }
 
-    if (!g_flyout.Create(hInst, g_buffer, g_theme)) return 2;
+    // Tray icon (para balloon tip cuando se excede kMaxPinned).
+    AddTrayIcon(g_hostHwnd);
+
+    if (!g_flyout.Create(hInst, g_buffer, g_theme)) {
+        RemoveTrayIcon();
+        return 2;
+    }
 
     // Actions triggered by the flyout's context menu
     g_flyout.SetContextActions(
@@ -82,11 +128,25 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
         [&](int idx) { g_buffer.TogglePin(idx);   g_flyout.Refresh(); },
         [&]()       { g_buffer.RemoveUnpinned();  g_flyout.Refresh(); });
 
-    
     g_flyout.SetOnSelect([](int idx) {
         if (g_hostHwnd) ::PostMessage(g_hostHwnd, MSG_PERFORM_PASTE,
                                       static_cast<WPARAM>(idx), 0);
     });
+
+    // Callback: cuando TogglePin es rechazado por kMaxPinned, mostramos
+    // un balloon tip nativo pidiendo al usuario que desancle uno primero.
+    g_buffer.SetOnPinLimitExceeded([]() {
+        ShowBalloonTip(L"AeroClip \x2014 Limite de anclados",
+                       L"Solo puede fijar 4 elementos. Desancla uno para anclar otro.");
+    });
+
+    // Carga los anclados persistentes del arranque anterior. Esto se hace
+    // ANTES de iniciar el monitor del portapapeles para que las nuevas
+    // capturas que lleguen no se mezclen ni hagan overflow sobre los pinned.
+    int loaded = g_buffer.LoadPinnedFromDisk();
+    if (loaded > 0) {
+        g_flyout.Refresh();
+    }
 
     // Registers Win+V against the host (HostWndProc handles WM_HOTKEY)
     if (!g_hotkey.Register(g_hostHwnd)) {
@@ -104,6 +164,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
 
     g_hotkey.Unregister();
     g_monitor.Stop();
+    RemoveTrayIcon();
     Gdiplus::GdiplusShutdown(gdiToken);
     return 0;
 }

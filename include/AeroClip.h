@@ -12,6 +12,29 @@ namespace AeroClip {
     inline constexpr int kFlyoutWidth = 250;
     inline constexpr int kFlyoutHeight = 425;
 
+    // Limite estricto de elementos anclados persistentes.
+    // Aeroclip mantiene una "banda de fijados" pequena y deliberada.
+    inline constexpr int kMaxPinned = 4;
+
+    // Encabezado del fichero persistente de un item anclado.
+    // Ubicacion: %LOCALAPPDATA%\AeroClip\Pinned\<seq>.acp
+    // El cuerpo es DPAPI cifrado con clave de usuario (CryptProtectData /
+    // CryptUnprotectData), por lo que puede ser descifrado en otro arranque
+    // del mismo usuario pero NO por otra cuenta de Windows.
+#pragma pack(push, 1)
+    struct PinnedHeader {
+        DWORD    magic;          // 'ACPB' = AeroClip Pinned Block
+        BYTE     version;        // 1
+        BYTE     kind;           // ItemKind (Text=1, Image=2)
+        BYTE     reserved[2];    // 0
+        DWORD    cbData;         // tamano original (sin comprimir)
+        DWORD    cbLz4;          // tamano LZ4 comprimido (0 para texto)
+        DWORD    cbStored;       // tamano del cuerpo (DPAPI)
+        FILETIME ftCaptured;     // timestamp original
+    };
+#pragma pack(pop)
+    static_assert(sizeof(PinnedHeader) == 28, "PinnedHeader size mismatch");
+
     // Byte limit per item. Keeps the worst-case buffer size at
     // ~kHistoryMax * kMaxItemBytes (15 * 8 MB = 120 MB) and prevents
     // 4K screenshots or huge dumps from saturating RAM.

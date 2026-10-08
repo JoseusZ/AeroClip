@@ -1,5 +1,6 @@
 ﻿#include "Storage/HistoryBuffer.h"
 #include <dpapi.h>
+#include <ShlObj.h>
 
 // LZ4 single-file in-tree (BSD-2, Yann Collet). Solo usamos las dos APIs
 // "simple" (LZ4_compress_default / LZ4_decompress_safe). El compresor
@@ -14,6 +15,7 @@ extern "C" {
 #pragma comment(lib, "gdiplus.lib")
 
 #pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "Shell32.lib")
 
 namespace AeroClip::Storage {
 
@@ -193,7 +195,7 @@ namespace AeroClip::Storage {
         m_seq = 0;
         m_renderReady = FALSE;
 
-
+        InitPinDir();
         CleanupOrphanTemps();
     }
 
@@ -393,10 +395,20 @@ namespace AeroClip::Storage {
     }
 
     BOOL HistoryBuffer::Remove(int index) {
-        CriticalSectionLock lock(m_cs);
-        if (index < 0 || index >= static_cast<int>(m_items.size())) return FALSE;
-        DestroyItem(m_items[index]);
-        m_items.erase(m_items.begin() + index);
+        BOOL wasPinned = FALSE;
+        HistoryItem snapshot;
+        {
+            CriticalSectionLock lock(m_cs);
+            if (index < 0 || index >= static_cast<int>(m_items.size())) return FALSE;
+            wasPinned = m_items[index].pinned;
+            snapshot = m_items[index];
+            DestroyItem(m_items[index]);
+            m_items.erase(m_items.begin() + index);
+        }
+        // Si era un anclado persistido, tambien borramos su .acp.
+        if (wasPinned) {
+            DeletePinnedFromDisk(snapshot);
+        }
         return TRUE;
     }
 
@@ -417,9 +429,43 @@ namespace AeroClip::Storage {
     }
 
     BOOL HistoryBuffer::TogglePin(int index) {
-        CriticalSectionLock lock(m_cs);
-        if (index < 0 || index >= static_cast<int>(m_items.size())) return FALSE;
-        m_items[index].pinned = !m_items[index].pinned;
+        // Etapa 1: tomar lock, validar y mutar el flag. Liberar el lock
+        // antes de cualquier IO de disco o callback para evitar reentrancy.
+        BOOL goingPinned = FALSE;
+        BOOL rejected = FALSE;
+        std::function<void()> cbCopy;
+        HistoryItem snapshot;
+        {
+            CriticalSectionLock lock(m_cs);
+            if (index < 0 || index >= static_cast<int>(m_items.size())) return FALSE;
+            goingPinned = !m_items[index].pinned;
+
+            // Limite estricto: si vamos a PIN y ya hay kMaxPinned, rechazamos.
+            if (goingPinned) {
+                int cur = 0;
+                for (const auto& it : m_items) if (it.pinned) ++cur;
+                if (cur >= kMaxPinned) {
+                    rejected = TRUE;
+                    cbCopy = m_onPinLimitExceeded;
+                }
+            }
+            if (!rejected) {
+                m_items[index].pinned = goingPinned;
+                snapshot = m_items[index];
+            }
+        } // lock liberado aqui
+
+        if (rejected) {
+            if (cbCopy) cbCopy();
+            return FALSE;
+        }
+
+        // Etapa 2: persistencia fuera del lock.
+        if (snapshot.pinned) {
+            SavePinnedToDisk(snapshot);
+        } else {
+            DeletePinnedFromDisk(snapshot);
+        }
         return TRUE;
     }
 
@@ -660,6 +706,338 @@ namespace AeroClip::Storage {
             m_cache = std::move(newCache);
             m_renderReady = TRUE;
         }
+    }
+
+    // -------------------------------------------------------------------
+    // Persistencia de anclados (NUEVO, no rompe nada existente)
+    //
+    // Idea: cada item anclado se serializa a %LOCALAPPDATA%\AeroClip\Pinned\
+    //   <seq>.acp con un PinnedHeader de 28 bytes + cuerpo cifrado con
+    //   CryptProtectData (DPAPI usuario). Asi sobrevive a cierres, reinicios
+    //   y apagados del PC, y solo el mismo usuario de Windows puede
+    //   descifrarlo.
+    //
+    // La representacion en RAM sigue siendo la misma: textos en it.pData
+    //   con CryptProtectMemory (in-process), imagenes en %TEMP%\AeroClip\.
+    // En el momento del pin/unpin convertimos entre las dos formas.
+    // -------------------------------------------------------------------
+
+    static BOOL CreateDirectoryTreeW(const WCHAR* path) {
+        if (!path || !*path) return FALSE;
+        WCHAR copy[MAX_PATH];
+        ::wcscpy_s(copy, MAX_PATH, path);
+        for (WCHAR* p = copy; *p; ++p) {
+            if ((*p == L'\\' || *p == L'/') && p != copy) {
+                *p = 0;
+                if (!::CreateDirectoryW(copy, nullptr)) {
+                    DWORD e = ::GetLastError();
+                    if (e != ERROR_ALREADY_EXISTS && e != ERROR_ACCESS_DENIED) {
+                        // seguir intentando; puede que ya exista
+                    }
+                }
+                *p = L'\\';
+            }
+        }
+        if (!::CreateDirectoryW(path, nullptr)) {
+            DWORD e = ::GetLastError();
+            if (e != ERROR_ALREADY_EXISTS) return FALSE;
+        }
+        return TRUE;
+    }
+
+    void HistoryBuffer::InitPinDir() {
+        WCHAR localAppData[MAX_PATH] = {};
+        if (FAILED(::SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr,
+                                       SHGFP_TYPE_CURRENT, localAppData))) {
+            m_pinDir[0] = 0;
+            return;
+        }
+        ::swprintf_s(m_pinDir, MAX_PATH, L"%s\\AeroClip\\Pinned\\", localAppData);
+        CreateDirectoryTreeW(m_pinDir);
+        m_pinSeq = 0;
+    }
+
+    void HistoryBuffer::SetOnPinLimitExceeded(std::function<void()> cb) {
+        m_onPinLimitExceeded = std::move(cb);
+    }
+
+    int HistoryBuffer::PinnedCount() const {
+        CriticalSectionLock lock(m_cs);
+        int n = 0;
+        for (const auto& it : m_items) if (it.pinned) ++n;
+        return n;
+    }
+
+    void HistoryBuffer::GetPinnedFilePath(const HistoryItem& it, WCHAR* out, DWORD cch) const {
+        if (!out || cch == 0) return;
+        // El nombre usa ftCaptured para mantener orden estable y uniqueness.
+        ULONGLONG ts = (static_cast<ULONGLONG>(it.ftCaptured.dwHighDateTime) << 32)
+                     | it.ftCaptured.dwLowDateTime;
+        ::swprintf_s(out, cch, L"%s%016llx_%u.acp",
+                     m_pinDir, ts, ::GetCurrentProcessId());
+    }
+
+    BOOL HistoryBuffer::SavePinnedToDisk(const HistoryItem& it) {
+        if (m_pinDir[0] == 0) return FALSE;
+        if (it.kind != ItemKind::Text && it.kind != ItemKind::Image) return FALSE;
+
+        // 1. Sacar el cuerpo en plano: para texto el wchar_t descifrado, para
+        //    imagen los bytes LZ4 descifrados (lo que iba dentro del DPAPI
+        //    in-process del temp file).
+        std::vector<BYTE> plain;
+        DWORD cbOriginal = it.cbData;
+        DWORD cbLz4 = 0;
+
+        if (it.kind == ItemKind::Text) {
+            if (!it.pData || !it.cbAlloc) return FALSE;
+            DWORD cbDec = 0;
+            LPVOID dec = DecryptCopyInternal(it, &cbDec);
+            if (!dec) return FALSE;
+            plain.assign(static_cast<BYTE*>(dec), static_cast<BYTE*>(dec) + cbDec);
+            ::SecureZeroMemory(dec, cbDec);
+            ::HeapFree(::GetProcessHeap(), 0, dec);
+        }
+        else { // Image
+            if (!it.bHasTemp || !it.szTempPath[0] || it.cbLz4 == 0) return FALSE;
+            std::vector<BYTE> storedDpapi;
+            DWORD cbOrig = 0;
+            if (!LoadImageFromTemp(it, storedDpapi, &cbOrig)) return FALSE;
+            SIZE_T cbAligned = ((SIZE_T)storedDpapi.size() + 15) & ~(SIZE_T)15;
+            LPVOID lz4 = ::HeapAlloc(::GetProcessHeap(), HEAP_ZERO_MEMORY, cbAligned);
+            if (!lz4) return FALSE;
+            if (!storedDpapi.empty())
+                memcpy(lz4, storedDpapi.data(), storedDpapi.size());
+            if (!::CryptUnprotectMemory(lz4, (DWORD)cbAligned,
+                                         CRYPTPROTECTMEMORY_SAME_PROCESS)) {
+                ::SecureZeroMemory(lz4, cbAligned);
+                ::HeapFree(::GetProcessHeap(), 0, lz4);
+                return FALSE;
+            }
+            plain.assign((BYTE*)lz4, (BYTE*)lz4 + it.cbLz4);
+            ::SecureZeroMemory(lz4, cbAligned);
+            ::HeapFree(::GetProcessHeap(), 0, lz4);
+            cbLz4 = it.cbLz4;
+            cbOriginal = cbOrig;
+        }
+
+        // 2. Cifrar el cuerpo con DPAPI cross-process (clave de usuario).
+        DATA_BLOB in{};
+        in.pbData = plain.empty() ? nullptr : plain.data();
+        in.cbData = (DWORD)plain.size();
+        DATA_BLOB out{};
+        if (!::CryptProtectData(&in, L"AeroClipPinned", nullptr, nullptr, nullptr,
+                                 CRYPTPROTECT_UI_FORBIDDEN, &out)) {
+            ::SecureZeroMemory(plain.data(), plain.size());
+            return FALSE;
+        }
+        ::SecureZeroMemory(plain.data(), plain.size());
+
+        // 3. Construir path y escribir.
+        WCHAR path[MAX_PATH] = {};
+        GetPinnedFilePath(it, path, MAX_PATH);
+
+        HANDLE h = ::CreateFileW(path, GENERIC_WRITE, 0, nullptr,
+                                 CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) {
+            ::LocalFree(out.pbData);
+            return FALSE;
+        }
+
+        PinnedHeader hdr{};
+        hdr.magic = 0x42435041; // 'ACPB' little-endian
+        hdr.version = 1;
+        hdr.kind = static_cast<BYTE>(it.kind);
+        hdr.cbData = cbOriginal;
+        hdr.cbLz4 = cbLz4;
+        hdr.cbStored = out.cbData;
+        hdr.ftCaptured = it.ftCaptured;
+
+        DWORD cbWrote = 0;
+        BOOL ok = ::WriteFile(h, &hdr, sizeof(hdr), &cbWrote, nullptr)
+                  && cbWrote == sizeof(hdr);
+
+        const BYTE* p = out.pbData;
+        DWORD remaining = out.cbData;
+        while (ok && remaining > 0) {
+            DWORD chunk = (remaining > (1u << 16)) ? (1u << 16) : remaining;
+            if (!::WriteFile(h, p, chunk, &cbWrote, nullptr) || cbWrote != chunk)
+                ok = FALSE;
+            else { p += chunk; remaining -= chunk; }
+        }
+        ::FlushFileBuffers(h);
+        ::CloseHandle(h);
+        ::LocalFree(out.pbData);
+
+        if (!ok) {
+            ::DeleteFileW(path);
+            return FALSE;
+        }
+        return TRUE;
+    }
+
+    void HistoryBuffer::DeletePinnedFromDisk(const HistoryItem& it) {
+        if (m_pinDir[0] == 0) return;
+        WCHAR path[MAX_PATH] = {};
+        GetPinnedFilePath(it, path, MAX_PATH);
+        // Puede que no exista (p. ej. si el item nunca llego a guardarse).
+        ::DeleteFileW(path);
+        // Tambien borrar cualquier variant del mismo timestamp+PID (defensa).
+        WCHAR pattern[MAX_PATH];
+        ULONGLONG ts = (static_cast<ULONGLONG>(it.ftCaptured.dwHighDateTime) << 32)
+                     | it.ftCaptured.dwLowDateTime;
+        ::swprintf_s(pattern, MAX_PATH, L"%s%016llx_*.acp", m_pinDir, ts);
+        WIN32_FIND_DATAW fd{};
+        HANDLE h = ::FindFirstFileW(pattern, &fd);
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                WCHAR full[MAX_PATH];
+                ::swprintf_s(full, MAX_PATH, L"%s%s", m_pinDir, fd.cFileName);
+                ::DeleteFileW(full);
+            } while (::FindNextFileW(h, &fd));
+            ::FindClose(h);
+        }
+    }
+
+    BOOL HistoryBuffer::LoadPinnedFromFile(const WCHAR* path, HistoryItem& out) {
+        HANDLE h = ::CreateFileW(path, GENERIC_READ,
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                 nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) return FALSE;
+
+        PinnedHeader hdr{};
+        DWORD cbRead = 0;
+        if (!::ReadFile(h, &hdr, sizeof(hdr), &cbRead, nullptr)
+            || cbRead != sizeof(hdr)) {
+            ::CloseHandle(h); return FALSE;
+        }
+        if (hdr.magic != 0x42435041 || hdr.version != 1) {
+            ::CloseHandle(h); return FALSE;
+        }
+        if (hdr.kind != static_cast<BYTE>(ItemKind::Text)
+         && hdr.kind != static_cast<BYTE>(ItemKind::Image)) {
+            ::CloseHandle(h); return FALSE;
+        }
+        if (hdr.cbStored == 0 || hdr.cbData == 0
+         || hdr.cbData > kMaxImageBytes) {
+            ::CloseHandle(h); return FALSE;
+        }
+
+        std::vector<BYTE> body(hdr.cbStored);
+        BYTE* p = body.data();
+        DWORD remaining = hdr.cbStored;
+        BOOL ok = TRUE;
+        while (ok && remaining > 0) {
+            DWORD chunk = (remaining > (1u << 16)) ? (1u << 16) : remaining;
+            if (!::ReadFile(h, p, chunk, &cbRead, nullptr) || cbRead != chunk)
+                ok = FALSE;
+            else { p += chunk; remaining -= chunk; }
+        }
+        ::CloseHandle(h);
+        if (!ok) return FALSE;
+
+        // Descifrar con DPAPI cross-process.
+        DATA_BLOB in{};
+        in.pbData = body.data();
+        in.cbData = hdr.cbStored;
+        DATA_BLOB plain{};
+        if (!::CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr,
+                                   CRYPTPROTECT_UI_FORBIDDEN, &plain)) {
+            return FALSE;
+        }
+
+        // Construir HistoryItem en la representacion in-RAM.
+        out = HistoryItem{};
+        out.kind = static_cast<ItemKind>(hdr.kind);
+        out.cbData = hdr.cbData;
+        out.cbLz4 = hdr.cbLz4;
+        out.cbStored = hdr.cbStored;
+        out.pinned = TRUE;
+        out.ftCaptured = hdr.ftCaptured;
+
+        if (out.kind == ItemKind::Text) {
+            if (plain.cbData != hdr.cbData) {
+                ::LocalFree(plain.pbData);
+                return FALSE;
+            }
+            SIZE_T cbAligned = ((SIZE_T)plain.cbData + 15) & ~(SIZE_T)15;
+            LPVOID enc = ::HeapAlloc(::GetProcessHeap(), HEAP_ZERO_MEMORY, cbAligned);
+            if (!enc) { ::LocalFree(plain.pbData); return FALSE; }
+            memcpy(enc, plain.pbData, plain.cbData);
+            ::SecureZeroMemory(plain.pbData, plain.cbData);
+            ::LocalFree(plain.pbData);
+            if (!::CryptProtectMemory(enc, (DWORD)cbAligned,
+                                       CRYPTPROTECTMEMORY_SAME_PROCESS)) {
+                ::SecureZeroMemory(enc, cbAligned);
+                ::HeapFree(::GetProcessHeap(), 0, enc);
+                return FALSE;
+            }
+            out.pData = enc;
+            out.cbAlloc = cbAligned;
+        }
+        else { // Image
+            if (plain.cbData != hdr.cbLz4) {
+                ::SecureZeroMemory(plain.pbData, plain.cbData);
+                ::LocalFree(plain.pbData);
+                return FALSE;
+            }
+            // Re-cifrar con CryptProtectMemory SAME_PROCESS y persistir a
+            // un nuevo temp file bajo el PID actual.
+            SIZE_T cbAligned = ((SIZE_T)plain.cbData + 15) & ~(SIZE_T)15;
+            LPVOID enc = ::HeapAlloc(::GetProcessHeap(), HEAP_ZERO_MEMORY, cbAligned);
+            if (!enc) {
+                ::SecureZeroMemory(plain.pbData, plain.cbData);
+                ::LocalFree(plain.pbData);
+                return FALSE;
+            }
+            memcpy(enc, plain.pbData, plain.cbData);
+            ::SecureZeroMemory(plain.pbData, plain.cbData);
+            ::LocalFree(plain.pbData);
+            if (!::CryptProtectMemory(enc, (DWORD)cbAligned,
+                                       CRYPTPROTECTMEMORY_SAME_PROCESS)) {
+                ::SecureZeroMemory(enc, cbAligned);
+                ::HeapFree(::GetProcessHeap(), 0, enc);
+                return FALSE;
+            }
+            WCHAR path[MAX_PATH] = {};
+            if (!PersistImageToTemp(enc, (DWORD)cbAligned, out.cbData,
+                                     path, MAX_PATH)) {
+                ::SecureZeroMemory(enc, cbAligned);
+                ::HeapFree(::GetProcessHeap(), 0, enc);
+                return FALSE;
+            }
+            ::SecureZeroMemory(enc, cbAligned);
+            ::HeapFree(::GetProcessHeap(), 0, enc);
+            ::wcscpy_s(out.szTempPath, MAX_PATH, path);
+            out.bHasTemp = TRUE;
+        }
+        return TRUE;
+    }
+
+    int HistoryBuffer::LoadPinnedFromDisk() {
+        if (m_pinDir[0] == 0) return 0;
+        CriticalSectionLock lock(m_cs);
+
+        WCHAR pattern[MAX_PATH];
+        ::swprintf_s(pattern, MAX_PATH, L"%s*.acp", m_pinDir);
+        WIN32_FIND_DATAW fd{};
+        HANDLE h = ::FindFirstFileW(pattern, &fd);
+        if (h == INVALID_HANDLE_VALUE) return 0;
+
+        int loaded = 0;
+        do {
+            WCHAR full[MAX_PATH];
+            ::swprintf_s(full, MAX_PATH, L"%s%s", m_pinDir, fd.cFileName);
+            HistoryItem it;
+            if (LoadPinnedFromFile(full, it)) {
+                // Insertar al principio para que se vean arriba como pinned.
+                m_items.insert(m_items.begin(), it);
+                ++loaded;
+            }
+            // Si falla, dejamos el .acp en sitio; el siguiente TogglePin
+            // lo sobreescribira con datos buenos.
+        } while (::FindNextFileW(h, &fd));
+        ::FindClose(h);
+        return loaded;
     }
 
 } // namespace AeroClip::Storage
