@@ -63,7 +63,7 @@ namespace AeroClip::Storage {
     }
 
     // -------------------------------------------------------------------
-    // Miniatura: DIB -> 48x48 grayscale -> JPEG calidad 50 (~1.5 KB)
+    // Miniatura: DIB -> JPEG con aspect ratio preservado, max 64x64
     // -------------------------------------------------------------------
 
     static int GetEncoderClsidJpeg(CLSID* pClsid) {
@@ -124,13 +124,30 @@ namespace AeroClip::Storage {
         Gdiplus::Bitmap srcBmp(hbm, nullptr);
         if (srcBmp.GetLastStatus() != Gdiplus::Ok) { ::DeleteObject(hbm); return out; }
 
-        const int kSide = 48;
-        Gdiplus::Bitmap thumb(kSide, kSide, PixelFormat24bppRGB);
+        // Calcular tamano del thumbnail preservando aspect ratio. La imagen
+        // original puede ser alargada o apaisada: NUNCA la deformamos a un
+        // cuadrado. Guardamos el JPEG con lado maximo kThumbMaxSide = 256
+        // (alta resolucion) para que DrawImageThumb pueda escalarlo hacia
+        // abajo con buena calidad hacia el slot cuadrado de 64x64 del item.
+        const int kThumbMaxSide = 256;
+        const int origW = static_cast<int>(srcBmp.GetWidth());
+        const int origH = static_cast<int>(srcBmp.GetHeight());
+        if (origW <= 0 || origH <= 0) { ::DeleteObject(hbm); return out; }
+        const float scale = (static_cast<float>(kThumbMaxSide) / static_cast<float>(origW) <
+                             static_cast<float>(kThumbMaxSide) / static_cast<float>(origH))
+                            ? (static_cast<float>(kThumbMaxSide) / static_cast<float>(origW))
+                            : (static_cast<float>(kThumbMaxSide) / static_cast<float>(origH));
+        int thumbW = static_cast<int>(origW * scale + 0.5f);
+        int thumbH = static_cast<int>(origH * scale + 0.5f);
+        if (thumbW < 1) thumbW = 1;
+        if (thumbH < 1) thumbH = 1;
+
+        Gdiplus::Bitmap thumb(thumbW, thumbH, PixelFormat24bppRGB);
         Gdiplus::Graphics g(&thumb);
         g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
         g.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
         g.Clear(Gdiplus::Color::White);
-        g.DrawImage(&srcBmp, 0, 0, kSide, kSide);
+        g.DrawImage(&srcBmp, 0, 0, thumbW, thumbH);
         ::DeleteObject(hbm);
 
 

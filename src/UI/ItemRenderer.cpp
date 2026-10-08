@@ -104,47 +104,81 @@ namespace AeroClip::UI {
         ::DeleteObject(hp);
     }
 
-    void ItemRenderer::DrawImageThumb(HDC hdc, const RECT& rc, const BYTE* jpeg, DWORD cbJpeg) {
-        if (!jpeg || cbJpeg == 0) return;
+    RECT ItemRenderer::DrawImageThumb(HDC hdc, const RECT& thumbSlot,
+        const BYTE* jpeg, DWORD cbJpeg) {
+        if (!jpeg || cbJpeg == 0) return {};
 
-        // Volcar los bytes JPEG en un IStream y pedirle a GDI+ que los
-        // decodifique. Asi nos ahorramos re-parsear el DIB manualmente.
+        // Volcar los bytes JPEG en un IStream y dejar que GDI+ los decodifique.
         HGLOBAL hglob = ::GlobalAlloc(GMEM_MOVEABLE, cbJpeg);
-        if (!hglob) return;
+        if (!hglob) return {};
         void* pMem = ::GlobalLock(hglob);
-        if (!pMem) { ::GlobalFree(hglob); return; }
+        if (!pMem) { ::GlobalFree(hglob); return {}; }
         std::memcpy(pMem, jpeg, cbJpeg);
         ::GlobalUnlock(hglob);
 
         IStream* stream = nullptr;
         if (FAILED(::CreateStreamOnHGlobal(hglob, TRUE, &stream))) {
             ::GlobalFree(hglob);
-            return;
+            return {};
         }
-        // CreateStreamOnHGlobal con TRUE libera el HGLOBAL cuando se libera
-        // el stream -> no hacemos GlobalFree aqui.
+        // CreateStreamOnHGlobal con TRUE libera el HGLOBAL al liberar el stream.
 
         Gdiplus::Bitmap* bmp = Gdiplus::Bitmap::FromStream(stream);
         stream->Release();
         if (!bmp || bmp->GetLastStatus() != Gdiplus::Ok) {
             delete bmp;
-            return;
+            return {};
         }
 
-        int dstW = rc.right - rc.left;
-        int dstH = rc.bottom - rc.top;
-        if (dstW <= 0 || dstH <= 0) { delete bmp; return; }
+        // 1. SLOT_SIZE: lado del slot cuadrado y fijo del item.
+        const int SLOT_SIZE = thumbSlot.right - thumbSlot.left;
+        if (SLOT_SIZE <= 0) { delete bmp; return {}; }
 
+        // 2. Dimensiones ORIGINALES del JPEG guardado (alta resolucion, p.ej.
+        //    256x144 para una captura 1920x1080). Aqui se ESCALA hacia abajo.
+        const int imgW = static_cast<int>(bmp->GetWidth());
+        const int imgH = static_cast<int>(bmp->GetHeight());
+        if (imgW <= 0 || imgH <= 0) { delete bmp; return {}; }
+
+        // 3. UNICO factor de escala para X e Y -> aspect ratio NUNCA se deforma.
+        const float scale = (static_cast<float>(SLOT_SIZE) / static_cast<float>(imgW) <
+                             static_cast<float>(SLOT_SIZE) / static_cast<float>(imgH))
+                            ? (static_cast<float>(SLOT_SIZE) / static_cast<float>(imgW))
+                            : (static_cast<float>(SLOT_SIZE) / static_cast<float>(imgH));
+
+        // 4. Tamano REAL escalado hacia abajo (nuevoAncho/nuevoAlto pueden
+        //    ser MENORES que SLOT_SIZE si la imagen no es 1:1 -> letterbox).
+        int nuevoAncho = static_cast<int>(imgW * scale);
+        int nuevoAlto  = static_cast<int>(imgH * scale);
+        if (nuevoAncho < 1) nuevoAncho = 1;
+        if (nuevoAlto  < 1) nuevoAlto  = 1;
+        if (nuevoAncho > SLOT_SIZE) nuevoAncho = SLOT_SIZE;
+        if (nuevoAlto  > SLOT_SIZE) nuevoAlto  = SLOT_SIZE;
+
+        // 5. Posicion centrada en el slot (letterbox). El slot NO se modifica.
+        const int x = thumbSlot.left + (SLOT_SIZE - nuevoAncho) / 2;
+        const int y = thumbSlot.top  + (SLOT_SIZE - nuevoAlto)  / 2;
+
+        // 6. DIBUJAR usando nuevoAncho x nuevoAlto (NUNCA SLOT_SIZE). Asi
+        //    una imagen 256x144 (16:9) baja a 64x36, ocupando todo el ancho
+        //    del slot pero con 14px de letterbox arriba y 14px abajo.
         Gdiplus::Graphics g(hdc);
         g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
         g.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
-        g.DrawImage(bmp, rc.left, rc.top, dstW, dstH);
+        g.DrawImage(
+            bmp,
+            Gdiplus::Rect(x, y, nuevoAncho, nuevoAlto),   // dest: tamano escalado
+            0, 0, imgW, imgH,                            // src:  original
+            Gdiplus::UnitPixel
+        );
 
+        const RECT drawnRc = { x, y, x + nuevoAncho, y + nuevoAlto };
         delete bmp;
+        return drawnRc;
     }
 
     void ItemRenderer::DrawTextLabel(HDC hdc, const RECT& rc, LPCWSTR text,
-        const ThemeEngine& te, BOOL hovered, BOOL hasThumb) {
+        const ThemeEngine& te, BOOL hovered, BOOL hasThumb, int thumbRight) {
         const auto& p = te.Colors();
         HFONT hf = (te.Current() == Theme::Classic && hovered)
             ? te.FontUnderline()
@@ -153,14 +187,14 @@ namespace AeroClip::UI {
         ::SetBkMode(hdc, TRANSPARENT);
         ::SetTextColor(hdc, hovered ? p.cardTextHover : p.cardText);
 
-        // Cuando hay miniatura (item de imagen con texto), reservamos
-        // kThumbSize + 16 a la izquierda para no chocar con ella.
-        // Cuando NO hay miniatura (item de texto puro), el texto usa todo el
-        // ancho del item - solo reservamos el espacio del boton "more" a la
-        // derecha y un pequeno margen.
+        // El texto arranca en una X FIJA (borde derecho del slot + kThumbGap).
+        // Como el slot es cuadrado y fijo, la X NUNCA depende del aspect
+        // ratio de la imagen -> nunca hay brincos entre items.
         RECT tr = rc;
-        if (hasThumb) {
-            tr.left += kThumbSize + 16;
+        if (hasThumb && thumbRight > rc.left) {
+            tr.left = thumbRight + kThumbGap;
+        } else if (hasThumb) {
+            tr.left += kThumbSlotPad;
         } else {
             tr.left += 10;
         }
@@ -367,25 +401,29 @@ namespace AeroClip::UI {
         const ThemeEngine& te) {
         DrawCard(hdc, rc, te, hovered);
 
-        BOOL hasThumb = !cached.thumbnailJpeg.empty();
+        const BOOL hasThumb = !cached.thumbnailJpeg.empty();
 
-        RECT thumbRc = {
-            rc.left + 6,
-            (rc.top + rc.bottom - kThumbSize) / 2,
-            rc.left + 6 + kThumbSize,
-            (rc.top + rc.bottom - kThumbSize) / 2 + kThumbSize
+        // CAJA FIJA CUADRADA para la miniatura. Siempre kThumbSlotSize x
+        // kThumbSlotSize (64x64), con padding constante. La imagen NUNCA
+        // sale de este recuadro, sin importar el aspect ratio del JPEG.
+        const RECT thumbSlot = {
+            rc.left + kThumbSlotPad,                            // +4
+            rc.top  + kThumbSlotPad,                            // +4
+            rc.left + kThumbSlotPad + kThumbSlotSize,           // +4+64
+            rc.top  + kThumbSlotPad + kThumbSlotSize            // +4+64
         };
 
-        // Solo se dibuja el contenedor de la imagen cuando hay JPEG cacheada;
-        // para items de texto ya NO se muestra el placeholder "Abc" - el texto
-        // ocupa todo el ancho disponible del item.
         if (hasThumb) {
-            DrawImageThumb(hdc, thumbRc, cached.thumbnailJpeg.data(),
+            DrawImageThumb(hdc, thumbSlot, cached.thumbnailJpeg.data(),
                            static_cast<DWORD>(cached.thumbnailJpeg.size()));
         }
 
+        // Texto SIEMPRE a la derecha del slot + kThumbGap. NO usamos el
+        // ancho real de la imagen dibujada -> nunca hay brincos.
+        const int thumbRight = hasThumb ? (thumbSlot.right + kThumbGap) : 0;
+
         if (!cached.text.empty()) {
-            DrawTextLabel(hdc, rc, cached.text.c_str(), te, hovered, hasThumb);
+            DrawTextLabel(hdc, rc, cached.text.c_str(), te, hovered, hasThumb, thumbRight);
         }
 
         if (pinned) {

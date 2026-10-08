@@ -63,6 +63,8 @@ namespace AeroClip::Core {
 		static constexpr int kTopMargin    = 14;
 		static constexpr int kBottomMargin = 14;
 		static constexpr int kSidePadding  = 10;
+		// Alto FIJO de cada item (mismo valor que teniamos originalmente).
+		// La miniatura se dimensiona para caber dentro de este alto, no al reves.
 		static constexpr int kItemHeight   = 74;
 		static constexpr int kItemGap      = 6;
 		static constexpr int kScrollBarWidth = 17;
