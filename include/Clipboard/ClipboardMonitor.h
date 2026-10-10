@@ -29,7 +29,7 @@ namespace AeroClip::Clipboard {
         static DWORD WINAPI      ThreadProc(LPVOID self);
 
         void OnClipboardUpdate();
-        void ProcessCurrent();
+        BOOL ProcessCurrent();
     };
 
 } // namespace AeroClip::Clipboard

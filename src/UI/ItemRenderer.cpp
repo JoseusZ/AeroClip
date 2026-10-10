@@ -3,8 +3,34 @@
 #include <uxtheme.h>
 #include <algorithm>
 #include <cstring>
+#include <objbase.h>
+#include <gdiplus.h>
 
 #pragma comment(lib, "uxtheme.lib")
+#pragma comment(lib, "gdiplus.lib")
+
+// Estructuras ICONDIR/ICONDIRENTRY del formato .ico. No vienen declaradas en
+// <windows.h>, asi que las definimos aqui, alineadas a 1 byte tal y como
+// aparecen en el fichero (formato oficial de Microsoft).
+#pragma pack(push, 1)
+struct IconDirEntry {
+    BYTE bWidth;
+    BYTE bHeight;
+    BYTE bColorCount;
+    BYTE bReserved;
+    WORD wPlanes;
+    WORD wBitsPerPixel;
+    DWORD dwBytesInRes;
+    WORD wResId;
+    WORD wReserved;
+};
+struct IconDir {
+    WORD idReserved;
+    WORD idType;
+    WORD idCount;
+    IconDirEntry idEntries[1]; // se accede como FAM; idCount valida los limites
+};
+#pragma pack(pop)
 
 namespace AeroClip::UI {
 
@@ -18,7 +44,7 @@ namespace AeroClip::UI {
     void ItemRenderer::DrawCard(HDC hdc, const RECT& rc, const ThemeEngine& te, BOOL hovered) {
         const auto& p = te.Colors();
 
-        if (te.Current() == Theme::Classic) {
+        if (!te.IsAeroGlass()) {
             HBRUSH hb = ::CreateSolidBrush(hovered ? p.cardBgHover : p.cardBg);
             ::FillRect(hdc, &rc, hb);
             ::DeleteObject(hb);
@@ -46,15 +72,27 @@ namespace AeroClip::UI {
             ::InflateRect(&rc2, 1, 1);
             HTHEME th = te.GetButtonTheme();
 
+
             HRGN ring = ::CreateRectRgn(rc.left, rc.top, rc.right, rc.bottom);
-            HRGN inn = ::CreateRectRgn(rc.left + 2, rc.top + 2, rc.right - 2, rc.bottom - 2);
+            HRGN inn  = ::CreateRectRgn(rc.left + 2, rc.top + 2,
+                                         rc.right - 2, rc.bottom - 2);
             ::CombineRgn(ring, ring, inn, RGN_DIFF);
             ::DeleteObject(inn);
 
-            ::SelectClipRgn(hdc, ring);
-            ::DrawThemeBackground(th, hdc, BP_PUSHBUTTON, PBS_HOT, &rc2, &rc);
-            ::SelectClipRgn(hdc, nullptr);
+            HRGN prevClip = ::CreateRectRgn(0, 0, 1, 1);
+            BOOL hadPrevClip = ::GetClipRgn(hdc, prevClip) > 0;
+            ::ExtSelectClipRgn(hdc, ring, RGN_AND);
             ::DeleteObject(ring);
+
+            ::DrawThemeBackground(th, hdc, BP_PUSHBUTTON, PBS_HOT, &rc2, &rc);
+
+            // Restore the clip price
+            if (hadPrevClip) {
+                ::SelectClipRgn(hdc, prevClip);
+            } else {
+                ::SelectClipRgn(hdc, nullptr);
+            }
+            ::DeleteObject(prevClip);
         }
 
         HPEN hp = ::CreatePen(PS_SOLID, 1, hovered ? p.cardBorderHover : p.cardBorder);
@@ -66,99 +104,75 @@ namespace AeroClip::UI {
         ::DeleteObject(hp);
     }
 
-    void ItemRenderer::DrawTextPlaceholder(HDC hdc, const RECT& rc, const ThemeEngine& te) {
-        const auto& p = te.Colors();
-        HBRUSH hb = ::CreateSolidBrush(RGB(240, 240, 240));
-        HPEN   hp = ::CreatePen(PS_SOLID, 1, p.cardBorder);
-        HBRUSH ob = static_cast<HBRUSH>(::SelectObject(hdc, hb));
-        HPEN   op = static_cast<HPEN>(::SelectObject(hdc, hp));
+    RECT ItemRenderer::DrawImageThumb(HDC hdc, const RECT& thumbSlot,
+        const BYTE* jpeg, DWORD cbJpeg) {
+        if (!jpeg || cbJpeg == 0) return {};
 
-        ::RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 4, 4);
-        ::SelectObject(hdc, op);
-        ::SelectObject(hdc, ob);
-        ::DeleteObject(hp);
-        ::DeleteObject(hb);
+        HGLOBAL hglob = ::GlobalAlloc(GMEM_MOVEABLE, cbJpeg);
+        if (!hglob) return {};
+        void* pMem = ::GlobalLock(hglob);
+        if (!pMem) { ::GlobalFree(hglob); return {}; }
+        std::memcpy(pMem, jpeg, cbJpeg);
+        ::GlobalUnlock(hglob);
 
-        HFONT old = static_cast<HFONT>(::SelectObject(hdc, te.FontRegular()));
-        ::SetBkMode(hdc, TRANSPARENT);
-        ::SetTextColor(hdc, p.cardTextMuted);
-        RECT tr = rc;
-        ::DrawTextW(hdc, L"Abc", -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        ::SelectObject(hdc, old);
-    }
-
-    static DWORD ComputePixelOffset(const BITMAPINFOHEADER& bih) {
-        DWORD off = bih.biSize;
-        if (bih.biCompression == BI_BITFIELDS && bih.biBitCount >= 16 && bih.biBitCount <= 32)
-            off += 12;
-        if (bih.biBitCount <= 8) {
-            DWORD colors = bih.biClrUsed ? bih.biClrUsed : (1u << bih.biBitCount);
-            off += colors * sizeof(RGBQUAD);
-        }
-        return off;
-    }
-
-    void ItemRenderer::DrawImageThumb(HDC hdc, const RECT& rc, const BYTE* dib, DWORD cbDib) {
-        if (!dib || cbDib < sizeof(BITMAPINFOHEADER)) return;
-        const auto* bih = reinterpret_cast<const BITMAPINFOHEADER*>(dib);
-        if (bih->biWidth <= 0 || bih->biHeight == 0 || bih->biPlanes != 1 || bih->biBitCount == 0)
-            return;
-
-        int srcW = abs(bih->biWidth);
-        int srcH = abs(bih->biHeight);
-
-        int dstW = 0, dstH = 0;
-        if (srcW >= srcH) {
-            dstW = kThumbSize;
-            dstH = (std::max)(1, static_cast<int>(srcH * (kThumbSize / static_cast<double>(srcW))));
-        }
-        else {
-            dstH = kThumbSize;
-            dstW = (std::max)(1, static_cast<int>(srcW * (kThumbSize / static_cast<double>(srcH))));
+        IStream* stream = nullptr;
+        if (FAILED(::CreateStreamOnHGlobal(hglob, TRUE, &stream))) {
+            ::GlobalFree(hglob);
+            return {};
         }
 
-        int cx = (rc.left + rc.right - dstW) / 2;
-        int cy = (rc.top + rc.bottom - dstH) / 2;
-
-        DWORD pixelOff = ComputePixelOffset(*bih);
-        if (pixelOff >= cbDib) return;
-
-#pragma pack(push, 1)
-        struct {
-            BITMAPINFOHEADER bmiHeader;
-            RGBQUAD          bmiColors[256];
-        } bi = {};
-#pragma pack(pop)
-
-        bi.bmiHeader = *bih;
-        const BYTE* extra = dib + bih->biSize;
-
-        if (bih->biCompression == BI_BITFIELDS && bih->biBitCount >= 16 && bih->biBitCount <= 32) {
-            if (extra && (cbDib >= bih->biSize + 12)) {
-                std::memcpy(&bi.bmiColors[0], extra, 12);
-            }
-        }
-        else if (bih->biBitCount <= 8) {
-            DWORD colors = bih->biClrUsed ? bih->biClrUsed : (1u << bih->biBitCount);
-            if (colors > 256) colors = 256;
-            if (extra && (cbDib - pixelOff >= colors * sizeof(RGBQUAD))) {
-                std::memcpy(bi.bmiColors, extra, colors * sizeof(RGBQUAD));
-            }
+        Gdiplus::Bitmap* bmp = Gdiplus::Bitmap::FromStream(stream);
+        stream->Release();
+        if (!bmp || bmp->GetLastStatus() != Gdiplus::Ok) {
+            delete bmp;
+            return {};
         }
 
-        int oldMode = ::SetStretchBltMode(hdc, HALFTONE);
-        POINT oldOrg;
-        ::SetBrushOrgEx(hdc, 0, 0, &oldOrg);
+        // 1. Dimensiones máximas disponibles en el slot (ancho x alto independizados)
+        const int slotW = thumbSlot.right - thumbSlot.left;
+        const int slotH = thumbSlot.bottom - thumbSlot.top;
+        if (slotW <= 0 || slotH <= 0) { delete bmp; return {}; }
 
-        ::StretchDIBits(hdc, cx, cy, dstW, dstH, 0, 0, srcW, srcH,
-            dib + pixelOff, reinterpret_cast<const BITMAPINFO*>(&bi), DIB_RGB_COLORS, SRCCOPY);
+        // 2. Dimensiones originales del JPEG
+        const int imgW = static_cast<int>(bmp->GetWidth());
+        const int imgH = static_cast<int>(bmp->GetHeight());
+        if (imgW <= 0 || imgH <= 0) { delete bmp; return {}; }
 
-        ::SetBrushOrgEx(hdc, oldOrg.x, oldOrg.y, nullptr);
-        ::SetStretchBltMode(hdc, oldMode);
+        // 3. Un solo factor de escala uniforme calculando el límite horizontal y vertical
+        const float scaleW = static_cast<float>(slotW) / static_cast<float>(imgW);
+        const float scaleH = static_cast<float>(slotH) / static_cast<float>(imgH);
+        const float scale  = (scaleW < scaleH) ? scaleW : scaleH;
+
+        // 4. Tamaño real escalado preservando aspect ratio sin deformar
+        int nuevoAncho = static_cast<int>(imgW * scale + 0.5f);
+        int nuevoAlto  = static_cast<int>(imgH * scale + 0.5f);
+        if (nuevoAncho < 1) nuevoAncho = 1;
+        if (nuevoAlto  < 1) nuevoAlto  = 1;
+        if (nuevoAncho > slotW) nuevoAncho = slotW;
+        if (nuevoAlto  > slotH) nuevoAlto  = slotH;
+
+        // 5. Posición pegada a la izquierda del slot y centrada verticalmente si fuera necesario
+        const int x = thumbSlot.left;
+        const int y = thumbSlot.top + (slotH - nuevoAlto) / 2;
+
+        // 6. Renderizado de alta calidad con GDI+
+        Gdiplus::Graphics g(hdc);
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        g.SetSmoothingMode(Gdiplus::SmoothingModeHighQuality);
+        g.DrawImage(
+            bmp,
+            Gdiplus::Rect(x, y, nuevoAncho, nuevoAlto),
+            0, 0, imgW, imgH,
+            Gdiplus::UnitPixel
+        );
+
+        const RECT drawnRc = { x, y, x + nuevoAncho, y + nuevoAlto };
+        delete bmp;
+        return drawnRc;
     }
 
     void ItemRenderer::DrawTextLabel(HDC hdc, const RECT& rc, LPCWSTR text,
-        const ThemeEngine& te, BOOL hovered) {
+        const ThemeEngine& te, BOOL hovered, BOOL hasThumb, int thumbRight) {
         const auto& p = te.Colors();
         HFONT hf = (te.Current() == Theme::Classic && hovered)
             ? te.FontUnderline()
@@ -167,77 +181,179 @@ namespace AeroClip::UI {
         ::SetBkMode(hdc, TRANSPARENT);
         ::SetTextColor(hdc, hovered ? p.cardTextHover : p.cardText);
 
+        // El texto arranca en una X FIJA (borde derecho del slot + kThumbGap).
+        // Como el slot es cuadrado y fijo, la X NUNCA depende del aspect
+        // ratio de la imagen -> nunca hay brincos entre items.
         RECT tr = rc;
-        tr.left += kThumbSize + 16;
+        if (hasThumb && thumbRight > rc.left) {
+            tr.left = thumbRight + kThumbGap;
+        } else if (hasThumb) {
+            tr.left += kThumbSlotPad;
+        } else {
+            tr.left += 10;
+        }
         tr.right -= 40;
         tr.top += 4;
         tr.bottom -= 4;
 
-        WCHAR line1[80];
-        int n = 0;
-        if (text) {
-            for (; text[n] && n < 79; ++n) {
-                WCHAR ch = text[n];
-                if (ch == L'\r' || ch == L'\n') break;
-                line1[n] = ch;
+        if (!text || !*text) {
+            ::SelectObject(hdc, old);
+            return;
+        }
+
+        // Wrap manual: DT_WORDBREAK de GDI solo corta en espacios/CRLF, por
+        // lo que URLs largas (sin espacios) se truncan con "..." en lugar de
+        // envolverse. Medimos cada caracter con GetTextExtentPoint32W y
+        // cortamos en el ULTIMO punto de quiebre valido (espacio, /, ?, &,
+        // =, -, _) que cabe en maxWidth. Preservamos "://" para que el
+        // esquema del URL no se separe. Si no hay punto de quiebre, cortamos
+        // al final del ancho disponible. DT_END_ELLIPSIS agrega "..." solo
+        // a la ultima linea visible si queda texto por dibujar.
+        TEXTMETRIC tm = {};
+        ::GetTextMetrics(hdc, &tm);
+        int lineHeight = tm.tmHeight > 0 ? tm.tmHeight : 14;
+        int maxWidth = tr.right - tr.left;
+        if (maxWidth <= 0) {
+            ::SelectObject(hdc, old);
+            return;
+        }
+        int maxLines = (tr.bottom - tr.top) / lineHeight;
+        if (maxLines < 1) maxLines = 1;
+
+        auto isSpace = [](WCHAR ch) -> bool {
+            return ch == L' ' || ch == L'\t';
+        };
+        auto isBreakable = [isSpace](WCHAR ch, WCHAR prev) -> bool {
+            if (isSpace(ch)) return true;
+            // No romper dentro de "://" (esquema de URL)
+            if (ch == L'/' && prev == L':') return false;
+            return ch == L'/' || ch == L'?' || ch == L'&' ||
+                   ch == L'=' || ch == L'-' || ch == L'_';
+        };
+
+        LPCWSTR cursor = text;
+        int lineIdx = 0;
+
+        while (*cursor && lineIdx < maxLines) {
+            LPCWSTR lastBreak = nullptr;
+            LPCWSTR bestEnd = cursor;
+            int currentWidth = 0;
+            WCHAR localPrev = (cursor > text) ? *(cursor - 1) : L'\0';
+
+            for (LPCWSTR q = cursor; *q; ++q) {
+                SIZE sz = {};
+                ::GetTextExtentPoint32W(hdc, q, 1, &sz);
+                currentWidth += sz.cx;
+
+                if (currentWidth > maxWidth) {
+                    break;
+                }
+                bestEnd = q + 1;
+                if (isBreakable(*q, localPrev)) {
+                    lastBreak = q + 1;
+                }
+                localPrev = *q;
             }
-        }
-        line1[n] = 0;
 
-        HFONT hOldSemibold = nullptr;
-        if (te.Current() != Theme::Classic) {
-            hOldSemibold = static_cast<HFONT>(::SelectObject(hdc, te.FontSemibold()));
-        }
+            // Si el texto completo cabe, no romper prematuramente en un
+            // espacio intermedio. Solo cortamos si realmente hay overflow.
+            LPCWSTR drawEnd = (lastBreak && *(bestEnd) != L'\0') ? lastBreak : bestEnd;
 
-        RECT r1 = tr;
-        r1.bottom = (tr.top + tr.bottom) / 2;
-        ::DrawTextW(hdc, line1, -1, &r1, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-
-        if (hOldSemibold) {
-            ::SelectObject(hdc, hOldSemibold);
-        }
-
-        if (text && text[n]) {
-            WCHAR line2[100];
-            int m = 0;
-            for (int i = n; text[i] && m < 99; ++i) {
-                WCHAR ch = text[i];
-                if (ch == L'\r') continue;
-                if (ch == L'\n') break;
-                line2[m++] = ch;
+            // Quitar espacios al inicio (por si el cursor quedo en uno).
+            LPCWSTR drawStart = cursor;
+            while (drawStart < drawEnd && isSpace(*drawStart)) {
+                drawStart++;
             }
-            line2[m] = 0;
 
-            HFONT hIt = static_cast<HFONT>(::SelectObject(hdc, te.FontItalic()));
-            ::SetTextColor(hdc, p.cardTextMuted);
-            RECT r2 = tr;
-            r2.top = (tr.top + tr.bottom) / 2;
-            ::DrawTextW(hdc, line2, -1, &r2, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            ::SelectObject(hdc, hIt);
+            int drawLen = (int)(drawEnd - drawStart);
+            // Quitar espacios al final.
+            while (drawLen > 0 && isSpace(drawStart[drawLen - 1])) {
+                drawLen--;
+            }
+
+            bool isLastLine = (lineIdx == maxLines - 1) || (*drawEnd == L'\0');
+            bool hasMore = (*drawEnd != L'\0');
+
+            RECT lr = { tr.left, tr.top + lineIdx * lineHeight,
+                        tr.right, tr.top + (lineIdx + 1) * lineHeight };
+            ::DrawTextW(hdc, drawStart, drawLen, &lr,
+                DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX |
+                (isLastLine && hasMore ? DT_END_ELLIPSIS : 0));
+
+            cursor = drawEnd;
+            lineIdx++;
         }
 
         ::SelectObject(hdc, old);
     }
 
     void ItemRenderer::DrawPinBadge(HDC hdc, const RECT& rc) {
-        HBRUSH hb = ::CreateSolidBrush(RGB(255, 192, 0));
-        HPEN   hp = ::CreatePen(PS_SOLID, 1, RGB(120, 80, 0));
-        HBRUSH ob = static_cast<HBRUSH>(::SelectObject(hdc, hb));
-        HPEN   op = static_cast<HPEN>(::SelectObject(hdc, hp));
+        // Icono nativo "tachuela" azul de Windows 7, recurso #5100 en
+        // imageres.dll (el mismo que aparece en "Desanclar este programa de
+        // la barra de tareas"). Se pinta cuando el elemento esta anclado al
+        // historial. Carga especificamente la variante 16x16 8bpp del grupo
+        // de iconos del recurso.
+        HMODULE hRes = ::LoadLibraryExW(L"imageres.dll", nullptr,
+                                        LOAD_LIBRARY_AS_DATAFILE);
+        if (!hRes) return;
 
-        int x = rc.right - 24, y = rc.top + 4;
-        ::Ellipse(hdc, x, y, x + 10, y + 10);
+        HICON hIcon = nullptr;
 
-        ::SelectObject(hdc, op);
-        ::SelectObject(hdc, ob);
-        ::DeleteObject(hp);
-        ::DeleteObject(hb);
-    }
+                // Busca la entrada concreta 16x16 8bpp dentro del grupo de iconos.
+                HRSRC hGrpInfo = ::FindResourceW(hRes, MAKEINTRESOURCE(5100), RT_GROUP_ICON);
+                if (hGrpInfo) {
+                    HGLOBAL hGrpData = ::LoadResource(hRes, hGrpInfo);
+                    const IconDir* pDir = static_cast<const IconDir*>(::LockResource(hGrpData));
+                    if (pDir) {
+                        const IconDirEntry* pEntry = nullptr;
+                        for (WORD i = 0; i < pDir->idCount && i < 12; ++i) {
+                            const IconDirEntry& e = pDir->idEntries[i];
+                            if (e.bWidth == 16 && e.bHeight == 16 && e.wBitsPerPixel == 8) {
+                                pEntry = &e;
+                                break;
+                            }
+                        }
+                        if (pEntry) {
+                            HRSRC hIcoInfo = ::FindResourceW(hRes,
+                                MAKEINTRESOURCE(pEntry->wResId), RT_ICON);
+                            if (hIcoInfo) {
+                                DWORD dwSize = ::SizeofResource(hRes, hIcoInfo);
+                                HGLOBAL hIcoData = ::LoadResource(hRes, hIcoInfo);
+                                void* pIcoData = ::LockResource(hIcoData);
+                                if (pIcoData) {
+                                    hIcon = ::CreateIconFromResourceEx(
+                                        reinterpret_cast<PBYTE>(pIcoData), dwSize,
+                                        TRUE, 0x00030000,
+                                        16, 16, LR_DEFAULTCOLOR);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: si por algun motivo la entrada 16x16 8bpp no existe,
+                // deja que Windows elija la mejor variante disponible.
+                if (!hIcon) {
+                    hIcon = static_cast<HICON>(::LoadImageW(
+                        hRes, MAKEINTRESOURCE(5100),
+                        IMAGE_ICON, 16, 16, 0));
+                }
+
+                if (hIcon) {
+                    int x = rc.right - 22;
+                    int y = rc.top + 2;
+                    ::DrawIconEx(hdc, x, y, hIcon, 16, 16, 0, nullptr, DI_NORMAL);
+                    ::DestroyIcon(hIcon);
+                }
+
+                ::FreeLibrary(hRes);
+            }
 
     void ItemRenderer::DrawMoreButton(HDC hdc, const RECT& rc,
         const ThemeEngine& te, BOOL hovered) {
         const auto& p = te.Colors();
-        if (te.Current() == Theme::Classic) {
+
+        if (!te.IsAeroGlass()) {
             HBRUSH hb = ::CreateSolidBrush(hovered ? p.cardBgHover : p.cardBg);
             ::FillRect(hdc, &rc, hb);
             ::DeleteObject(hb);
@@ -251,8 +367,9 @@ namespace AeroClip::UI {
             ::DeleteObject(dark);
         }
         else {
-            HBRUSH hb = ::CreateSolidBrush(hovered ? p.moreBtnHover : p.cardBg);
-            HPEN   hp = ::CreatePen(PS_SOLID, 1, hovered ? p.moreBtnBorder : p.cardBorder);
+
+            HBRUSH hb = ::CreateSolidBrush(hovered ? p.cardBgHover : p.cardBg);
+            HPEN   hp = ::CreatePen(PS_SOLID, 1, hovered ? p.cardBorderHover : p.cardBorder);
             HBRUSH ob = static_cast<HBRUSH>(::SelectObject(hdc, hb));
             HPEN   op = static_cast<HPEN>(::SelectObject(hdc, hp));
 
@@ -265,7 +382,7 @@ namespace AeroClip::UI {
 
         HFONT old = static_cast<HFONT>(::SelectObject(hdc, te.FontSemibold()));
         ::SetBkMode(hdc, TRANSPARENT);
-        ::SetTextColor(hdc, hovered ? p.moreGlyphHover : p.moreGlyph);
+        ::SetTextColor(hdc, hovered ? p.cardTextHover : p.moreGlyph);
 
         RECT tr = rc;
         tr.top -= 1;
@@ -278,22 +395,28 @@ namespace AeroClip::UI {
         const ThemeEngine& te) {
         DrawCard(hdc, rc, te, hovered);
 
-        RECT thumbRc = {
-            rc.left + 6,
-            (rc.top + rc.bottom - kThumbSize) / 2,
-            rc.left + 6 + kThumbSize,
-            (rc.top + rc.bottom - kThumbSize) / 2 + kThumbSize
+        const BOOL hasThumb = !cached.thumbnailJpeg.empty();
+
+        // El alto del slot utiliza todo el espacio útil dentro de la tarjeta fija (74px - 2*5px = 64px)
+        const int slotH = (rc.bottom - rc.top) - (2 * kThumbSlotPad);
+        const RECT thumbSlot = {
+            rc.left + kThumbSlotPad,
+            rc.top  + kThumbSlotPad,
+            rc.left + kThumbSlotPad + kThumbSlotSize,
+            rc.top  + kThumbSlotPad + slotH
         };
 
-        if (!cached.image.empty()) {
-            DrawImageThumb(hdc, thumbRc, cached.image.data(), static_cast<DWORD>(cached.image.size()));
-        }
-        else {
-            DrawTextPlaceholder(hdc, thumbRc, te);
+        RECT drawnRc = {};
+        if (hasThumb) {
+            drawnRc = DrawImageThumb(hdc, thumbSlot, cached.thumbnailJpeg.data(),
+                                     static_cast<DWORD>(cached.thumbnailJpeg.size()));
         }
 
+        // Ubica el texto inmediatamente después del borde derecho de la imagen dibujada
+        const int thumbRight = (hasThumb && drawnRc.right > 0) ? drawnRc.right : 0;
+
         if (!cached.text.empty()) {
-            DrawTextLabel(hdc, rc, cached.text.c_str(), te, hovered);
+            DrawTextLabel(hdc, rc, cached.text.c_str(), te, hovered, hasThumb, thumbRight);
         }
 
         if (pinned) {

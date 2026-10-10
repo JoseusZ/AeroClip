@@ -9,37 +9,102 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx</Extensions>
     </Filter>
-    <Filter Include="Source Files\Storage"><UniqueIdentifier>{A1B2C3D4-1111-1111-1111-A11111111111}</UniqueIdentifier></Filter>
-    <Filter Include="Source Files\Utils"><UniqueIdentifier>{A1B2C3D4-2222-2222-2222-A22222222222}</UniqueIdentifier></Filter>
-    <Filter Include="Source Files\Clipboard"><UniqueIdentifier>{A1B2C3D4-3333-3333-3333-A33333333333}</UniqueIdentifier></Filter>
-    <Filter Include="Source Files\UI"><UniqueIdentifier>{A1B2C3D4-4444-4444-4444-A44444444444}</UniqueIdentifier></Filter>
-    <Filter Include="Source Files\Core"><UniqueIdentifier>{A1B2C3D4-5555-5555-5555-A55555555555}</UniqueIdentifier></Filter>
-    <Filter Include="Header Files\Storage"><UniqueIdentifier>{B1B2C3D4-1111-1111-1111-B11111111111}</UniqueIdentifier></Filter>
-    <Filter Include="Header Files\Utils"><UniqueIdentifier>{B1B2C3D4-2222-2222-2222-B22222222222}</UniqueIdentifier></Filter>
-    <Filter Include="Header Files\Clipboard"><UniqueIdentifier>{B1B2C3D4-3333-3333-3333-B33333333333}</UniqueIdentifier></Filter>
-    <Filter Include="Header Files\UI"><UniqueIdentifier>{B1B2C3D4-4444-4444-4444-B44444444444}</UniqueIdentifier></Filter>
-    <Filter Include="Header Files\Core"><UniqueIdentifier>{B1B2C3D4-5555-5555-5555-B55555555555}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files\Storage">
+      <UniqueIdentifier>{A1B2C3D4-1111-1111-1111-A11111111111}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Utils">
+      <UniqueIdentifier>{A1B2C3D4-2222-2222-2222-A22222222222}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Clipboard">
+      <UniqueIdentifier>{A1B2C3D4-3333-3333-3333-A33333333333}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\UI">
+      <UniqueIdentifier>{A1B2C3D4-4444-4444-4444-A44444444444}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Core">
+      <UniqueIdentifier>{A1B2C3D4-5555-5555-5555-A55555555555}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Storage">
+      <UniqueIdentifier>{B1B2C3D4-1111-1111-1111-B11111111111}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Utils">
+      <UniqueIdentifier>{B1B2C3D4-2222-2222-2222-B22222222222}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Clipboard">
+      <UniqueIdentifier>{B1B2C3D4-3333-3333-3333-B33333333333}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\UI">
+      <UniqueIdentifier>{B1B2C3D4-4444-4444-4444-B44444444444}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Core">
+      <UniqueIdentifier>{B1B2C3D4-5555-5555-5555-B55555555555}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="..\src\Storage\HistoryBuffer.cpp"><Filter>Source Files\Storage</Filter></ClCompile>
-    <ClCompile Include="..\src\Utils\InputInjector.cpp"><Filter>Source Files\Utils</Filter></ClCompile>
-    <ClCompile Include="..\src\Clipboard\ClipboardMonitor.cpp"><Filter>Source Files\Clipboard</Filter></ClCompile>
-    <ClCompile Include="..\src\Clipboard\DataConverter.cpp"><Filter>Source Files\Clipboard</Filter></ClCompile>
-    <ClCompile Include="..\src\UI\ThemeEngine.cpp"><Filter>Source Files\UI</Filter></ClCompile>
-    <ClCompile Include="..\src\UI\ItemRenderer.cpp"><Filter>Source Files\UI</Filter></ClCompile>
-    <ClCompile Include="..\src\Core\HotkeyManager.cpp"><Filter>Source Files\Core</Filter></ClCompile>
-    <ClCompile Include="..\src\Core\FlyoutWindow.cpp"><Filter>Source Files\Core</Filter></ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\Storage\HistoryBuffer.cpp">
+      <Filter>Source Files\Storage</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\Utils\InputInjector.cpp">
+      <Filter>Source Files\Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\Clipboard\ClipboardMonitor.cpp">
+      <Filter>Source Files\Clipboard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\Clipboard\DataConverter.cpp">
+      <Filter>Source Files\Clipboard</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\UI\ThemeEngine.cpp">
+      <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\UI\ItemRenderer.cpp">
+      <Filter>Source Files\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\Core\HotkeyManager.cpp">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\Core\FlyoutWindow.cpp">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\Storage\lz4.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\include\AeroClip.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="..\include\Storage\HistoryBuffer.h"><Filter>Header Files\Storage</Filter></ClInclude>
-    <ClInclude Include="..\include\Utils\InputInjector.h"><Filter>Header Files\Utils</Filter></ClInclude>
-    <ClInclude Include="..\include\Clipboard\ClipboardMonitor.h"><Filter>Header Files\Clipboard</Filter></ClInclude>
-    <ClInclude Include="..\include\Clipboard\DataConverter.h"><Filter>Header Files\Clipboard</Filter></ClInclude>
-    <ClInclude Include="..\include\UI\ThemeEngine.h"><Filter>Header Files\UI</Filter></ClInclude>
-    <ClInclude Include="..\include\UI\ItemRenderer.h"><Filter>Header Files\UI</Filter></ClInclude>
-    <ClInclude Include="..\include\Core\HotkeyManager.h"><Filter>Header Files\Core</Filter></ClInclude>
-    <ClInclude Include="..\include\Core\FlyoutWindow.h"><Filter>Header Files\Core</Filter></ClInclude>
+    <ClInclude Include="..\include\AeroClip.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Storage\HistoryBuffer.h">
+      <Filter>Header Files\Storage</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Utils\InputInjector.h">
+      <Filter>Header Files\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Clipboard\ClipboardMonitor.h">
+      <Filter>Header Files\Clipboard</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Clipboard\DataConverter.h">
+      <Filter>Header Files\Clipboard</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\UI\ThemeEngine.h">
+      <Filter>Header Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\UI\ItemRenderer.h">
+      <Filter>Header Files\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Core\HotkeyManager.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\Core\FlyoutWindow.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Manifest Include="app.manifest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
 </Project>
