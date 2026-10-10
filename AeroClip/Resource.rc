@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // AeroClip - Recurso de version (VS_VERSION_INFO).
 // El numero de version y los metadatos vienen de ../include/Version.h.
 // Cambia esos macros y el .exe resultante tendra la nueva version.
@@ -11,11 +11,7 @@ VS_VERSION_INFO VERSIONINFO
 FILEVERSION    AEROCLIP_FILEVERSION_NUM
 PRODUCTVERSION AEROCLIP_PRODUCTVERSION_NUM
 FILEFLAGSMASK  0x3fL
-#if defined(_DEBUG)
-FILEFLAGS      VS_FF_DEBUG
-#else
 FILEFLAGS      0x0L
-#endif
 FILEOS         VOS__WINDOWS32
 FILETYPE       VFT_APP
 FILESUBTYPE    VFT2_UNKNOWN
