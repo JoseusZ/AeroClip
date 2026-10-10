@@ -77,17 +77,17 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-            <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-          <Manifest>app.manifest</Manifest>
-        </Link>
-      </ItemDefinitionGroup>
-      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+      <Manifest>app.manifest</Manifest>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -96,34 +96,34 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-            <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-          <Manifest>app.manifest</Manifest>
-        </Link>
-      </ItemDefinitionGroup>
-      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+      <Manifest>app.manifest</Manifest>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-            <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-          <Manifest>app.manifest</Manifest>
-          <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-        </Link>
-      </ItemDefinitionGroup>
-      <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      <Manifest>app.manifest</Manifest>
+      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -132,17 +132,17 @@
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-            <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <AdditionalIncludeDirectories>..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-          <Manifest>app.manifest</Manifest>
-          <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-        </Link>
-      </ItemDefinitionGroup>
-      <ItemGroup>
+      <Manifest>app.manifest</Manifest>
+      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="..\src\Storage\HistoryBuffer.cpp" />
     <ClCompile Include="..\src\Storage\lz4.c" />
@@ -155,11 +155,10 @@
     <ClCompile Include="..\src\Core\FlyoutWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
-      <Manifest Include="app.manifest" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <ClInclude Include="..\include\AeroClip.h" />
+    <Manifest Include="app.manifest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\include\AeroClip.h" />
     <ClInclude Include="..\include\Storage\HistoryBuffer.h" />
     <ClInclude Include="..\include\Utils\InputInjector.h" />
     <ClInclude Include="..\include\Clipboard\ClipboardMonitor.h" />
@@ -168,6 +167,9 @@
     <ClInclude Include="..\include\UI\ItemRenderer.h" />
     <ClInclude Include="..\include\Core\HotkeyManager.h" />
     <ClInclude Include="..\include\Core\FlyoutWindow.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -3,6 +3,7 @@
 // via WM_CLIPBOARDUPDATE, and displays the flyout with encrypted history in RAM.
 
 #include "AeroClip.h"
+#include "Version.h"
 #include "UI/ThemeEngine.h"
 #include "UI/Localization.h"
 #include "Storage/HistoryBuffer.h"
@@ -104,6 +105,10 @@ static BOOL CreateHostWindow(HINSTANCE hInst) {
 }
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
+
+    // Log silencioso de la version compilada (visible con DebugView / VS Output).
+    // No afecta la UI ni el comportamiento de la app.
+    ::OutputDebugStringW((AeroClip::FullVersionW() + L" - arrancando\r\n").c_str());
 
     Gdiplus::GdiplusStartupInput gdiStartupIn{};
     ULONG_PTR gdiToken = 0;
