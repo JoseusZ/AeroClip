@@ -34,6 +34,18 @@ The whole project is C++17 over the raw Win32 API. There is no MFC, no .NET runt
 - A balloon tip in the notification area is shown when the user attempts to pin more than the configured maximum. The icon is added and immediately deleted in the same notification cycle, so it never lingers in the system tray.
 - Zero network activity, zero telemetry, zero background services, zero registry writes, zero scheduled tasks.
 
+### Aero Glass (DWM composition on)
+
+![Flyout rendered with Aero Glass on Windows 7](docs/screenshots/Aero.png)
+
+### Basic (themes on, DWM composition off)
+
+![Flyout rendered with the Basic theme](docs/screenshots/Basic.png)
+
+### Classic (themes off)
+
+![Flyout rendered in Classic style](docs/screenshots/Classic.png)
+
 ## Pinning
 
 Pinned entries behave differently from regular entries in three ways.
@@ -41,6 +53,8 @@ Pinned entries behave differently from regular entries in three ways.
 1. They are always rendered at the top of the flyout, regardless of when they were captured.
 2. They are protected from automatic eviction when the buffer reaches its limit. The buffer first tries to drop the oldest non-pinned item; if every slot is pinned, the new capture is rejected instead of overwriting a pin.
 3. They are persisted to disk the instant the pin action is taken, and reloaded on the next launch. Both text and image pins survive process exit, logoff, reboot, and full power-off.
+
+![Pinned items history](docs/screenshots/PinnedMenu.png)
 
 ### Storage layout for pinned items
 
@@ -52,9 +66,13 @@ Pinned entries behave differently from regular entries in three ways.
 
 To wipe all pinned items, stop AeroClip, delete the `Pinned` folder, and restart. The buffer for non-pinned items is RAM-only and is cleared automatically when the process exits.
 
+![It remains after the process is complete.](docs/screenshots/PinnedElement.png)
+
 ### Pin limit
 
 The maximum number of pinned items is fixed at four. When the user clicks the pin action on a fifth item, AeroClip refuses the change, leaves the buffer unchanged, and shows a balloon tip in the system notification area with the message in the current UI language. The balloon is delivered through the legacy `Shell_NotifyIcon` API because Windows 7 does not route legacy balloons through the Windows Runtime.
+
+![Balloon tip shown when the pin limit is reached](docs/screenshots/PinBalloon.png)
 
 ## Hotkey reference
 
@@ -198,6 +216,18 @@ Todo el proyecto es C++17 sobre la API nativa de Win32. No hay MFC, ni runtime .
 - Globo de notificación en el área de notificación cuando el usuario intenta anclar más del máximo configurado. El icono se añade y se elimina de inmediato en el mismo ciclo, por lo que nunca queda visible en la bandeja del sistema.
 - Cero actividad de red, cero telemetría, cero servicios en segundo plano, cero escrituras en el registro, cero tareas programadas.
 
+### Aero Glass (composición DWM activada)
+
+![Panel flotante renderizado con Aero Glass en Windows 7](docs/screenshots/Aero.png)
+
+### Básico (temas activados, composición DWM desactivada)
+
+![Panel flotante renderizado con el tema Básico](docs/screenshots/Basic.png)
+
+### Clásico (temas desactivados)
+
+![Panel flotante renderizado en estilo Clásico](docs/screenshots/Classic.png)
+
 ## Anclaje
 
 Los elementos anclados se comportan de forma diferente al resto en tres sentidos.
@@ -205,6 +235,8 @@ Los elementos anclados se comportan de forma diferente al resto en tres sentidos
 1. Siempre se renderizan en la parte superior del flyout, independientemente de cuándo se capturaron.
 2. Están protegidos del eviction automático cuando el búfer llega a su límite. El búfer intenta primero descartar el elemento no anclado más antiguo; si todas las ranuras están ancladas, la nueva captura se rechaza en lugar de sobrescribir un pin.
 3. Se persisten a disco en el instante del anclaje y se recargan en el siguiente arranque. Tanto los anclados de texto como de imagen sobreviven al cierre del proceso, al cierre de sesión, al reinicio y al apagado completo del equipo.
+
+![Historial de elementos anclados](docs/screenshots/PinnedMenu.png)
 
 ### Disposición del almacenamiento de anclados
 
@@ -216,9 +248,13 @@ Los elementos anclados se comportan de forma diferente al resto en tres sentidos
 
 Para borrar todos los anclados, detén AeroClip, elimina la carpeta `Pinned` y reinicia. El búfer de elementos no anclados es solo RAM y se limpia automáticamente al salir del proceso.
 
+![Permanece después de que el proceso ha finalizado.](docs/screenshots/PinnedElement.png)
+
 ### Límite de anclados
 
 El número máximo de elementos anclados es cuatro. Cuando el usuario hace clic en anclar sobre un quinto elemento, AeroClip rechaza el cambio, deja el búfer como está y muestra un globo de notificación en el área de notificación del sistema con el mensaje en el idioma de UI actual. El globo se entrega mediante la API legacy `Shell_NotifyIcon` porque Windows 7 no enruta los globos legacy a través del Windows Runtime.
+
+![Mensaje informativo que aparece al alcanzar el límite de pines](docs/screenshots/PinBalloon.png)
 
 ## Atajos de teclado
 
