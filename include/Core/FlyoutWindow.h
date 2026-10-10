@@ -29,12 +29,17 @@ namespace AeroClip::Core {
 
         void SetOnSelect(std::function<void(int idx)> onSelect);
 
+        // Repaints the flyout after an external change to the buffer (Remove, pin, clear all).
+
+                void Refresh();
+
         RECT GetWindowRect() const;
 
     private:
         Storage::HistoryBuffer* m_buffer = nullptr;
         UI::ThemeEngine*        m_te     = nullptr;
         HWND                    m_hwnd   = nullptr;
+        HWND                    m_hScroll = nullptr;  // SCROLLBAR child control (SBS_VERT)
         HINSTANCE               m_inst   = nullptr;
 
         int   m_hoverItem     = -1;
@@ -43,9 +48,9 @@ namespace AeroClip::Core {
         BOOL  m_trackingMouse = FALSE;
         BOOL  m_aeroExtended  = FALSE;
 
-        // Tamano REAL del area cliente (cacheado en WM_SIZE). NO usamos
-        // constantes porque el chrome nativo cambia entre temas y entre
-        // maquinas y el cliente difiere.
+        static constexpr UINT_PTR kThemeCoalesceTimerId = 0xAC17;
+        static constexpr int     kThemeCoalesceMs      = 50;
+
         int   m_clientW = kFlyoutWidth;
         int   m_clientH = kFlyoutHeight;
 
@@ -54,29 +59,22 @@ namespace AeroClip::Core {
         std::function<void(int)> m_actPin;
         std::function<void()>    m_actClearAll;
 
-        // Distribucion del AREA CLIENTE (no del total de ventana).
-        // El titulo y los bordes los dibuja Windows/DWM con chrome nativo.
-        static constexpr int kTopMargin    = 14;
-        static constexpr int kBottomMargin = 14;
-        static constexpr int kSidePadding  = 10;
-        static constexpr int kItemHeight   = 74;
-        static constexpr int kItemGap      = 6;
+		//The ttile and borders are drawn by Windows/DWM with native chrome
+		static constexpr int kTopMargin    = 14;
+		static constexpr int kBottomMargin = 14;
+		static constexpr int kSidePadding  = 10;
+		// Alto FIJO de cada item (mismo valor que teniamos originalmente).
+		// La miniatura se dimensiona para caber dentro de este alto, no al reves.
+		static constexpr int kItemHeight   = 74;
+		static constexpr int kItemGap      = 6;
+		static constexpr int kScrollBarWidth = 17;
 
-        // Altura VISUAL real del caption nativo en Win7. SM_CYCAPTION devuelve
-        // 0 cuando DWM compone (Aero), porque entonces la caption no es no-
-        // cliente sino que DWM la pinta DENTRO del cliente via
-        // DwmExtendFrameIntoClientArea. En Clasico, con DWM aun presente o
-        // segun metricas del sistema, tambien puede ser menor que la altura
-        // visual. En Basic el caption es no-cliente y kTopMargin solo basta.
+        //Actual visual height of the native caption on Windows 7: SM_CYCAPTION returns 0 when DWM composition (Aero) is active.
         static constexpr int kVisualCaptionPx = 28;
 
         int  ListAreaTop()    const {
-            // En Basic el chrome es no-cliente (~22px) y kTopMargin=14 ya deja
-            // los items holgados. En Aero/Classic el chrome puede caer dentro
-            // del cliente (DWM extended) o reportar altura 0, y entonces los
-            // items pintarian debajo del titulo nativo: reservamos la altura
-            // visual del caption en esos dos temas.
-            if (m_te && m_te->Current() != AeroClip::Theme::Basic)
+            // In Basic, the chrome is non-client (~22px), and kTopMargin=14 already leaves the items with plenty of room.
+            if (m_te && m_te->Current() == AeroClip::Theme::Aero)
                 return kVisualCaptionPx + kTopMargin;
             return kTopMargin;
         }
@@ -99,16 +97,16 @@ namespace AeroClip::Core {
 
         void Paint(HDC hdc, const RECT& rcClient);
         void PaintItems(HDC hdc, const RECT& rcClient);
-        void PaintScrollbar(HDC hdc, int n, const RECT& rcClient);
         void PaintEmptyState(HDC hdc, const RECT& rcClient);
+
+        // Synchronizes the state of the NATIVE scrollbar (WS_VSCROLL) with m_scrollY
+
+        void UpdateScrollBar();
+        int  ListAreaRight() const { return m_clientW - kScrollBarWidth; }
 
         void EnableAeroCaption();
         void DisableAeroCaption();
         int  CaptionHeight() const;
-
-        // Recalcula el tamano TOTAL para que el area cliente vuelva a ser
-        // exactamente kFlyoutWidth x kFlyoutHeight (lo necesita al cambiar
-        // de tema porque el chrome nativo cambia de altura).
         void ReflowForTheme();
 
         static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);

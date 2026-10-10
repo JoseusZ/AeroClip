@@ -1,5 +1,9 @@
 ﻿#include "Utils/InputInjector.h"
 #include "Storage/HistoryBuffer.h"
+#include <dpapi.h>
+extern "C" {
+#include "../Storage/lz4.h"
+}
 #include <cstring>
 
 namespace AeroClip::Utils {
@@ -101,25 +105,60 @@ namespace AeroClip::Utils {
     }
 
     BOOL InputInjector::PasteImage(const AeroClip::HistoryItem& item) {
-        DWORD cb = 0;
-        LPVOID data = AeroClip::Storage::HistoryBuffer::DecryptCopy(item, &cb);
-        if (!data || cb == 0) {
-            if (data) {
-                ::SecureZeroMemory(data, cb);
-                ::HeapFree(::GetProcessHeap(), 0, data);
-            }
+        // Opcion C: las imagenes viven en disco (LZ4 + DPAPI). El original
+        // descifrado solo existe aqui, en el momento del paste.
+        if (item.kind != AeroClip::ItemKind::Image || !item.bHasTemp) {
             return FALSE;
         }
 
+        std::vector<BYTE> compressedDpapi;
+        DWORD cbOriginal = 0;
+        if (!AeroClip::Storage::HistoryBuffer::LoadImageFromTemp(item, compressedDpapi, &cbOriginal)) {
+            return FALSE;
+        }
+        // compressedDpapi.size() == tamano DPAPI-encriptado en disco (cbStored).
+        // cbOriginal solo se usa como cota destino para LZ4_decompress_safe.
+        if (compressedDpapi.empty()) return FALSE;
+
+        // 1) DPAPI CryptUnprotectMemory (igual que HistoryBuffer::Protect).
+        SIZE_T cbAligned = ((SIZE_T)compressedDpapi.size() + 15) & ~static_cast<SIZE_T>(15);
+        LPVOID enc = ::HeapAlloc(::GetProcessHeap(), HEAP_ZERO_MEMORY, cbAligned);
+        if (!enc) return FALSE;
+        memcpy(enc, compressedDpapi.data(), compressedDpapi.size());
+
+        BOOL dpapiOk = ::CryptUnprotectMemory(enc, static_cast<DWORD>(cbAligned),
+                                              CRYPTPROTECTMEMORY_SAME_PROCESS);
+        if (!dpapiOk) {
+            ::SecureZeroMemory(enc, cbAligned);
+            ::HeapFree(::GetProcessHeap(), 0, enc);
+            return FALSE;
+        }
+        // Ahora enc contiene bytes LZ4.
+
+        // 2) LZ4 descomprimir para obtener el DIB original.
+        DWORD cbDib = item.cbData;
+        LPVOID dib = ::HeapAlloc(::GetProcessHeap(), 0, cbDib);
+        if (!dib) { ::HeapFree(::GetProcessHeap(), 0, enc); return FALSE; }
+        int n = LZ4_decompress_safe(static_cast<const char*>(enc),
+                                     static_cast<char*>(dib),
+                                     (int)item.cbLz4, (int)cbDib);
+        ::SecureZeroMemory(enc, cbAligned);
+        ::HeapFree(::GetProcessHeap(), 0, enc);
+        if (n < 0 || (DWORD)n != cbDib) {
+            ::HeapFree(::GetProcessHeap(), 0, dib);
+            return FALSE;
+        }
+
+        // 3) Pegar al clipboard.
         BOOL ok = FALSE;
         if (TryOpenClipboardWithRetry(nullptr)) {
             ::EmptyClipboard();
-            ok = SetClipboardDib(data, cb);
+            ok = SetClipboardDib(dib, cbDib);
             ::CloseClipboard();
         }
 
-        ::SecureZeroMemory(data, cb);
-        ::HeapFree(::GetProcessHeap(), 0, data);
+        ::SecureZeroMemory(dib, cbDib);
+        ::HeapFree(::GetProcessHeap(), 0, dib);
 
         if (ok) SendCtrlV();
         return ok;

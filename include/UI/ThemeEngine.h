@@ -7,30 +7,30 @@
 namespace AeroClip::UI {
 
     struct Palette {
-        // Fondo del flyout
+		// flyout background
         COLORREF flyoutBg = RGB(245, 246, 247);
         COLORREF headerBg = RGB(232, 232, 232);
         COLORREF headerText = RGB(32, 32, 32);
         COLORREF divider = RGB(208, 208, 208);
 
-        // Tarjeta de item
+		// Item card
         COLORREF cardBg = RGB(255, 255, 255);
         COLORREF cardBorder = RGB(225, 225, 225);
         COLORREF cardText = RGB(32, 32, 32);
         COLORREF cardTextMuted = RGB(110, 110, 110);
 
-        // Item en hover (Aero/Basic)
+        // Item on hover (Aero/Basic)
         COLORREF cardBgHover = RGB(245, 248, 252);
         COLORREF cardBorderHover = RGB(120, 180, 235);
         COLORREF cardTextHover = RGB(0, 60, 116);
 
-        // Botón [...]
+        // Buttom [...]
         COLORREF moreBtnHover = RGB(252, 228, 232);
         COLORREF moreBtnBorder = RGB(232, 17, 35);
         COLORREF moreGlyph = RGB(80, 80, 80);
         COLORREF moreGlyphHover = RGB(176, 0, 16);
 
-        // Botón cerrar [X]
+        // Close button [X]
         COLORREF closeBtnHover = RGB(232, 17, 35);
         COLORREF closeGlyph = RGB(96, 96, 96);
         COLORREF closeGlyphHover = RGB(255, 255, 255);
@@ -40,7 +40,7 @@ namespace AeroClip::UI {
         COLORREF scrollThumb = RGB(192, 192, 192);
         COLORREF scrollThumbHot = RGB(120, 135, 156);
 
-        // Clásico
+        // Classic
         COLORREF classicBg = RGB(212, 208, 200);
         COLORREF classicText = RGB(0, 0, 0);
         COLORREF classicHoverBg = RGB(178, 191, 210);
@@ -54,7 +54,7 @@ namespace AeroClip::UI {
 
         void   Refresh();
         Theme  Current() const { return m_theme; }
-        BOOL   IsAeroGlass() const { return m_aeroGlass; }
+        BOOL   IsAeroGlass() const { return m_theme == Theme::Aero; }
 
         const Palette& Colors() const { return m_palette; }
 
@@ -71,6 +71,8 @@ namespace AeroClip::UI {
 
     private:
         Theme   m_theme = Theme::Basic;
+        // Internal DWM state cache in DetectTheme()
+       
         BOOL    m_aeroGlass = FALSE;
         Palette m_palette;
 

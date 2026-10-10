@@ -1,5 +1,7 @@
 ﻿#include "Core/FlyoutWindow.h"
 #include "UI/ItemRenderer.h"
+#include "UI/Localization.h"
+#include "AeroClip.h"
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <vsstyle.h>
@@ -10,10 +12,10 @@
 
 namespace AeroClip::Core {
 
-    // Altura aprox. de la caption nativa (SM_CYSMCAPTION) — la que DWM extiende.
+    // Approximate height of the native caption (SM_CYSMCAPTION)—the one DWM extends.
     static int GetSystemCaptionHeight() {
         DWORD cx = ::GetSystemMetrics(SM_CYCAPTION);
-        if (cx == 0) cx = 26; // fallback razonable para Win7
+        if (cx == 0) cx = 26; // reasonable fallback for Win7
         return static_cast<int>(cx);
     }
 
@@ -47,11 +49,7 @@ namespace AeroClip::Core {
         HMONITOR mon = ::MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi = { sizeof(mi) };
         ::GetMonitorInfo(mon, &mi);
-
-        // Calculamos el rectángulo total deseado para que el área cliente sea
-        // exactamente kFlyoutWidth x kFlyoutHeight.
-        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME;
-        // Quitamos maximize/minimize, dejamos solo close.
+        DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
         style &= ~(WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
 
         RECT wanted = { 0, 0, kFlyoutWidth, kFlyoutHeight };
@@ -64,7 +62,7 @@ namespace AeroClip::Core {
 
         m_hwnd = ::CreateWindowEx(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-            kClass, L"Historial",
+            kClass, AeroClip::UI::LocFlyoutTitle(),
             style,
             x, y, totalW, totalH,
             nullptr, nullptr, hInst, this);
@@ -72,7 +70,21 @@ namespace AeroClip::Core {
         if (!m_hwnd) return FALSE;
 
         ::SetWindowLongPtr(m_hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+        if (m_te) m_te->Refresh();
+        m_hScroll = ::CreateWindowEx(
+            0, L"SCROLLBAR", nullptr,
+            SBS_VERT | WS_CHILD | WS_VISIBLE,
+            0, 0, kScrollBarWidth, 100,  // initial position; UpdateScrollBar fixes it
+            m_hwnd, nullptr, hInst, nullptr);
+        if (m_hScroll) {
+            // By default, the scrollbars extend to the maximum extent and do not hide when the range is empty.
+            ::SetScrollRange(m_hScroll, SB_CTL, 0, 1, TRUE);
+        }
+
+        UpdateScrollBar();
+
         EnableAeroCaption();
+        ::DwmFlush();
         return TRUE;
     }
 
@@ -82,10 +94,6 @@ namespace AeroClip::Core {
 
     void FlyoutWindow::ReflowForTheme() {
         if (!m_hwnd) return;
-        // Recalcula el tamano total de ventana para que el area cliente
-        // siga siendo exactamente kFlyoutWidth x kFlyoutHeight aunque el
-        // chrome nativo cambie (Aero glass vs Classic Classic). Sin esto,
-        // al togglear tema el contenido queda desfasado.
         DWORD style = static_cast<DWORD>(::GetWindowLongPtr(m_hwnd, GWL_STYLE));
         DWORD ex    = static_cast<DWORD>(::GetWindowLongPtr(m_hwnd, GWL_EXSTYLE));
         RECT wanted = { 0, 0, kFlyoutWidth, kFlyoutHeight };
@@ -94,17 +102,16 @@ namespace AeroClip::Core {
         int totalH = wanted.bottom - wanted.top;
         ::SetWindowPos(m_hwnd, nullptr, 0, 0, totalW, totalH,
             SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        // Tras el reflow, GetClientRect reentrara por WM_SIZE y actualizara
-        // m_clientW/H.
+        // After the reflow, GetClientRect will be re-entered via WM_SIZE and update m_clientW/H
     }
 
     void FlyoutWindow::EnableAeroCaption() {
-        if (!m_te || !m_te->IsAeroGlass()) return;
+        m_aeroExtended = FALSE;
+        if (!m_te || !m_hwnd) return;
+
         BOOL comp = FALSE;
         if (FAILED(::DwmIsCompositionEnabled(&comp)) || !comp) return;
-        // Extendemos el cristal SOLO a la caption nativa. El resto del area
-        // cliente lo pintamos nosotros sobre fondo solido para evitar el
-        // efecto "glitch" que aparece al pintar opaco sobre cristal.
+        if (!m_te->IsAeroGlass()) return;
         MARGINS m = { 0, 0, CaptionHeight(), 0 };
         if (SUCCEEDED(::DwmExtendFrameIntoClientArea(m_hwnd, &m))) {
             m_aeroExtended = TRUE;
@@ -120,7 +127,7 @@ namespace AeroClip::Core {
 
     RECT FlyoutWindow::ItemRect(int index) const {
         int y = ListAreaTop() + index * (kItemHeight + kItemGap) - m_scrollY;
-        return { kSidePadding, y, m_clientW - kSidePadding, y + kItemHeight };
+        return { kSidePadding, y, ListAreaRight() - kSidePadding, y + kItemHeight };
     }
 
     RECT FlyoutWindow::MoreButtonRect(int index) const {
@@ -140,7 +147,7 @@ namespace AeroClip::Core {
 
         int relInside = rel - idx * (kItemHeight + kItemGap);
         if (relInside >= kItemHeight) return -1;
-        if (x < kSidePadding || x > m_clientW - kSidePadding) return -1;
+        if (x < kSidePadding || x > ListAreaRight() - kSidePadding) return -1;
 
         return idx;
     }
@@ -154,10 +161,15 @@ namespace AeroClip::Core {
 
         int item = HitTestItem(x, y);
         if (item >= 0) {
-            m_hoverItem = item;
             RECT rcMore = MoreButtonRect(item);
-            if (x >= rcMore.left && x < rcMore.right && y >= rcMore.top && y < rcMore.bottom) {
+            BOOL overMore = (x >= rcMore.left && x < rcMore.right &&
+                              y >= rcMore.top  && y < rcMore.bottom);
+            if (overMore) {
+
                 m_moreHover = item;
+            }
+            else {
+                m_hoverItem = item;
             }
         }
 
@@ -171,6 +183,7 @@ namespace AeroClip::Core {
         int max = MaxScrollY(n);
         if (m_scrollY > max) m_scrollY = max;
         if (m_scrollY < 0)   m_scrollY = 0;
+        UpdateScrollBar();
     }
 
     void FlyoutWindow::Toggle() {
@@ -183,6 +196,9 @@ namespace AeroClip::Core {
         if (!m_hwnd) return;
         m_scrollY = 0;
         RecalcScrollBounds();
+        UpdateScrollBar();
+        // Ensures that the thumbnails are calculated for the current state of the buffer
+        if (m_buffer) m_buffer->PrepareRender();
         ::ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
         ::SetForegroundWindow(m_hwnd);
         ::InvalidateRect(m_hwnd, nullptr, FALSE);
@@ -194,6 +210,17 @@ namespace AeroClip::Core {
     }
 
     void FlyoutWindow::OnClipboardUpdate() {
+        // Regenerates the thumbnail cache (includes decompressing LZ4 and building JPEGs for images)
+        if (m_buffer) m_buffer->PrepareRender();
+        if (m_hwnd && ::IsWindowVisible(m_hwnd)) {
+            ::InvalidateRect(m_hwnd, nullptr, FALSE);
+        }
+    }
+
+    void FlyoutWindow::Refresh() {
+        // Llamado por main.cpp tras Remove / TogglePin / RemoveUnpinned para que la flyout repinte inmediatamente
+        RecalcScrollBounds();
+        if (m_buffer) m_buffer->PrepareRender();
         if (m_hwnd && ::IsWindowVisible(m_hwnd)) {
             ::InvalidateRect(m_hwnd, nullptr, FALSE);
         }
@@ -223,37 +250,21 @@ namespace AeroClip::Core {
         const auto& p = m_te->Colors();
         ::SetBkMode(hdc, TRANSPARENT);
         ::SetTextColor(hdc, p.cardTextMuted);
-        RECT rc{ kSidePadding, ListAreaTop(), m_clientW - kSidePadding, ListAreaBottom() };
-        ::DrawTextW(hdc, L"Tu historial esta vacio.\nCopia algo para empezar.",
+        RECT rc{ kSidePadding, ListAreaTop(), ListAreaRight() - kSidePadding, ListAreaBottom() };
+        ::DrawTextW(hdc, AeroClip::UI::LocEmptyState(),
             -1, &rc, DT_CENTER | DT_VCENTER | DT_WORDBREAK);
+        (void)rcClient;
         ::SelectObject(hdc, old);
     }
 
-    static void BuildRenderItemForPaint(
+    static void BuildRenderItemForPaint_DELETED(
             const AeroClip::HistoryItem& hi,
             Storage::RenderItem& out) {
         out.text.clear();
-        out.image.clear();
-
-        if (!hi.pData || !hi.cbData) return;
-        DWORD cb = 0;
-        LPVOID data = Storage::HistoryBuffer::DecryptCopy(hi, &cb);
-        if (!data || cb == 0) return;
-
-        if (cb >= sizeof(BITMAPINFOHEADER)) {
-            const auto* bih = reinterpret_cast<const BITMAPINFOHEADER*>(data);
-            if (bih->biSize == sizeof(BITMAPINFOHEADER) && bih->biWidth > 0 && bih->biHeight != 0) {
-                out.image.assign(static_cast<const BYTE*>(data), static_cast<const BYTE*>(data) + cb);
-            }
-            else {
-                out.text.assign(static_cast<const wchar_t*>(data), cb / sizeof(wchar_t));
-            }
-        }
-        else {
-            out.text.assign(static_cast<const wchar_t*>(data), cb / sizeof(wchar_t));
-        }
-        ::SecureZeroMemory(data, cb);
-        ::HeapFree(::GetProcessHeap(), 0, data);
+        out.thumbnailJpeg.clear();
+  
+        (void)hi;
+        (void)out;
     }
 
     void FlyoutWindow::PaintItems(HDC hdc, const RECT& rcClient) {
@@ -263,22 +274,22 @@ namespace AeroClip::Core {
         ::SetBkMode(hdc, TRANSPARENT);
         if (n == 0) { PaintEmptyState(hdc, rcClient); return; }
 
-        // Clip al area de lista para no pintar fuera.
+        // Clip to the list area to avoid painting outside (leaving room for the native scrollbar).
         HRGN rgn = ::CreateRectRgn(kSidePadding, top,
-                                    m_clientW - kSidePadding, bot);
+                                    ListAreaRight() - kSidePadding, bot);
         ::SelectClipRgn(hdc, rgn);
         ::DeleteObject(rgn);
 
         for (int i = 0; i < n; ++i) {
             RECT rc = ItemRect(i);
             if (rc.bottom <= top || rc.top >= bot) continue;
-            BOOL hovered = (m_hoverItem == i) || (m_moreHover == i);
+            BOOL hovered = (m_hoverItem == i);
             BOOL moreH = (m_moreHover == i);
 
-            const auto item = m_buffer->Get(i);   // copia por valor
+			const auto item = m_buffer->Get(i);   // copy for value 
             BOOL pinned = item.pinned;
 
-            // Background nativo segun tema:
+            // Native background per theme:
             HTHEME hThemeList = nullptr;
             int partId = 0, stateId = 0;
             BOOL useUxTheme = FALSE;
@@ -293,12 +304,12 @@ namespace AeroClip::Core {
                 }
             }
             if (useUxTheme) {
-                // Margen que uxtheme necesita para pintar el degradado/border.
+                // Margin required by uxtheme to render the gradient/border.
                 RECT rcDraw = rc;
                 ::DrawThemeBackground(hThemeList, hdc, partId, stateId, &rcDraw, nullptr);
             }
             else {
-                // Clasico / Basic: GetSysColor mantiene la personalizacion del usuario.
+                // Classic / Basic: GetSysColor preserves user customization.
                 const auto& p = m_te->Colors();
                 COLORREF fill = hovered ? p.cardBgHover : p.cardBg;
                 COLORREF line = p.cardBorder;
@@ -313,70 +324,64 @@ namespace AeroClip::Core {
                 ::DeleteObject(hb);
             }
 
-            // Contenido real (texto/imagen) usando las APIs nativas
-            // (clases uxtheme, fuentes Segoe UI del sistema).
-            Storage::RenderItem ri;
-            BuildRenderItemForPaint(item, ri);
-            UI::ItemRenderer::DrawItem(hdc, rc, ri, pinned, hovered, *m_te);
+            // Actual content (text/image) using native APIs
 
-            if (hovered) {
-                UI::ItemRenderer::DrawMoreButton(hdc, MoreButtonRect(i), *m_te, moreH);
-            }
+                        const Storage::RenderItem& ri = m_buffer->GetCached(i);
+                        UI::ItemRenderer::DrawItem(hdc, rc, ri, pinned, hovered, *m_te);
+            UI::ItemRenderer::DrawMoreButton(hdc, MoreButtonRect(i), *m_te, moreH);
+            HRGN reapply = ::CreateRectRgn(kSidePadding, top,
+                                            ListAreaRight() - kSidePadding, bot);
+            ::SelectClipRgn(hdc, reapply);
+            ::DeleteObject(reapply);
         }
 
         ::SelectClipRgn(hdc, nullptr);
     }
 
-    void FlyoutWindow::PaintScrollbar(HDC hdc, int n, const RECT& rcClient) {
-        if (n == 0) return;
-        int contentH = ContentHeight(n);
-        int viewH = ListAreaHeight();
-        if (contentH <= viewH) return;
+    void FlyoutWindow::UpdateScrollBar() {
+        if (!m_hwnd || !m_hScroll) return;
+        int n = m_buffer ? m_buffer->Count() : 0;
 
-        const auto& p = m_te->Colors();
-        int sbX = m_clientW - 6;
-        int sbTop = ListAreaTop();
-        int sbBot = ListAreaBottom();
-        int sbH = sbBot - sbTop;
-        int maxScroll = std::max(1, contentH - viewH);
-        int thumbH = std::max(20, (int)(sbH * (double)viewH / contentH));
-        int thumbY = sbTop + (int)((sbH - thumbH) * (double)m_scrollY / maxScroll);
+        // Position the control—and it depends on the subject matter—so as not to clash with it.
+        
+        int sbX = m_clientW - kScrollBarWidth;
+        int sbY = 0;
+        if (m_te && m_te->Current() == AeroClip::Theme::Aero) {
+            // Beneath the title that DWM displays within the client area.
+            sbY = CaptionHeight();
+        }
+        int sbH = m_clientH - sbY;
+        if (sbH < 16) sbH = 16; 
+        ::MoveWindow(m_hScroll, sbX, sbY, kScrollBarWidth, sbH, TRUE);
 
-        // Pista y pulgar como tema nativo de scrollbar si hay tema disponible.
-        if (m_te && m_te->IsAeroGlass()) {
-            if (HTHEME hScr = m_te->OpenScrollbarTheme()) {
-                RECT trackRc{ sbX, sbTop, sbX + 4, sbBot };
-                RECT thumbRc{ sbX, thumbY, sbX + 4, thumbY + thumbH };
-                ::DrawThemeBackground(hScr, hdc, SBP_UPPERTRACKVERT, SCRBS_NORMAL, &trackRc, nullptr);
-                int thumbState = (m_hoverItem >= 0) ? SCRBS_HOT : SCRBS_NORMAL;
-                ::DrawThemeBackground(hScr, hdc, SBP_THUMBBTNVERT, thumbState, &thumbRc, nullptr);
-            }
+        if (n == 0) {
+            
+            ::ShowWindow(m_hScroll, SW_HIDE);
             return;
         }
+        ::ShowWindow(m_hScroll, SW_SHOW);
 
-        // Clasico / Basic: pintar con GetSysColor respetando personalizacion.
-        RECT track{ sbX, sbTop, sbX + 4, sbBot };
-        HBRUSH hb = ::CreateSolidBrush(::GetSysColor(COLOR_SCROLLBAR));
-        ::FillRect(hdc, &track, hb);
-        ::DeleteObject(hb);
-
-        RECT thumb{ sbX, thumbY, sbX + 4, thumbY + thumbH };
-        HBRUSH ht = ::CreateSolidBrush(::GetSysColor(COLOR_3DSHADOW));
-        ::FillRect(hdc, &thumb, ht);
-        ::DeleteObject(ht);
+        // SCROLLBAR native of Win32 
+        int content = ContentHeight(n);
+        int visible = ListAreaHeight();
+        SCROLLINFO si = {};
+        si.cbSize = sizeof(si);
+        si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
+        si.nMin   = 0;
+        si.nMax   = (content > 0) ? (content - 1) : 0;
+        si.nPage  = (UINT)visible;
+        si.nPos   = m_scrollY;
+        ::SetScrollInfo(m_hScroll, SB_CTL, &si, TRUE);
     }
 
     void FlyoutWindow::Paint(HDC hdc, const RECT& rcClient) {
         const auto& p = m_te->Colors();
 
-        // Area cliente: fondo solido. La caption se encarga DWM/Windows.
         if (m_aeroExtended) {
-            // Bajo el caption extendido pintamos un fondo translucido para que
-            // el cristal se vea de modo ligero pero las tarjetas tengan base.
-            // En Aero real, el area extendida es solo la caption, asi que aqui
-            // pintamos fondo opaco normal.
+            RECT rcBelow = rcClient;
+            rcBelow.top = CaptionHeight();
             HBRUSH hb = ::CreateSolidBrush(p.flyoutBg);
-            ::FillRect(hdc, &rcClient, hb);
+            ::FillRect(hdc, &rcBelow, hb);
             ::DeleteObject(hb);
         }
         else {
@@ -386,10 +391,7 @@ namespace AeroClip::Core {
         }
 
         PaintItems(hdc, rcClient);
-        PaintScrollbar(hdc, m_buffer ? m_buffer->Count() : 0, rcClient);
-
-        // Asegura que NO pintamos encima del caption.
-        // El clip del cliente ya lo garantiza; no hay header custom.
+        // The scrollbar is drawn by the OS (WS_VSCROLL with the active theme's chrome).
     }
 
     LRESULT CALLBACK FlyoutWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -404,20 +406,58 @@ namespace AeroClip::Core {
 
         switch (msg) {
         case WM_ERASEBKGND:
-            // Devolvemos 1 para evitar que GDI pinte fondo encima de DWM/Aero.
+
             return 1;
 
         case WM_SIZE: {
-            // Cacheamos el tamano REAL del area cliente. Despues de un
-            // WM_THEMECHANGED/WM_DWMCOMPOSITIONCHANGED con ReflowForTheme()
-            // llegara aqui y refrescaremos m_clientW/H.
-            self->m_clientW = LOWORD(lp);
-            self->m_clientH = HIWORD(lp);
-            return 0;
-        }
+
+                            self->m_clientW = LOWORD(lp);
+                            self->m_clientH = HIWORD(lp);
+                            self->UpdateScrollBar();
+                            return 0;
+                        }
+
+                case WM_VSCROLL: {
+
+                            int n = self->m_buffer ? self->m_buffer->Count() : 0;
+                            int maxScroll = self->MaxScrollY(n);
+                            int newY = self->m_scrollY;
+                            int code = LOWORD(wp);
+                            int posThumb = HIWORD(wp);
+                            switch (code) {
+                            case SB_LINEUP:        newY -= (self->kItemHeight + self->kItemGap); break;
+                            case SB_LINEDOWN:      newY += (self->kItemHeight + self->kItemGap); break;
+                            case SB_PAGEUP:        newY -= self->ListAreaHeight(); break;
+                            case SB_PAGEDOWN:      newY += self->ListAreaHeight(); break;
+                            case SB_THUMBPOSITION: newY = posThumb; break;
+                            case SB_THUMBTRACK:    newY = posThumb; break;
+                            case SB_TOP:           newY = 0; break;
+                            case SB_BOTTOM:        newY = maxScroll; break;
+                            default: return 0;
+                            }
+                            if (newY < 0) newY = 0;
+                            if (newY > maxScroll) newY = maxScroll;
+                            if (newY != self->m_scrollY) {
+                                self->m_scrollY = newY;
+                                SCROLLINFO si = {};
+                                si.cbSize = sizeof(si);
+                                si.fMask  = SIF_POS;
+                                si.nPos   = newY;
+                                ::SetScrollInfo(self->m_hScroll, SB_CTL, &si, TRUE);
+                                ::InvalidateRect(hwnd, nullptr, FALSE);
+                            }
+                            return 0;
+                        }
+
+                case MSG_CLIPBOARD_UPDATED: {
+                    self->RecalcScrollBounds();
+                    if (self->m_buffer) self->m_buffer->PrepareRender();
+                    ::InvalidateRect(hwnd, nullptr, FALSE);
+                    return 0;
+                }
 
         case WM_NCHITTEST: {
-            // Permitimos redimensionar con el native chrome.
+
             return ::DefWindowProc(hwnd, msg, wp, lp);
         }
 
@@ -450,12 +490,17 @@ namespace AeroClip::Core {
                 RECT rcMore = self->MoreButtonRect(item);
                 if (x >= rcMore.left && x < rcMore.right && y >= rcMore.top && y < rcMore.bottom) {
                     HMENU hMenu = ::CreatePopupMenu();
-                    ::AppendMenu(hMenu, MF_STRING, 1, L"Eliminar");
-                    ::AppendMenu(hMenu, MF_STRING, 2, L"Anclar");
+                    const wchar_t* lblDelete  = AeroClip::UI::LocMenuDelete();
+                    const wchar_t* lblClear   = AeroClip::UI::LocMenuClearAll();
+                    const bool pinned = self->m_buffer && self->m_buffer->Get(item).pinned;
+                    const wchar_t* lblPin = pinned ? AeroClip::UI::LocMenuUnpin()
+                                                   : AeroClip::UI::LocMenuPin();
+                    ::AppendMenu(hMenu, MF_STRING, 1, lblDelete);
+                    ::AppendMenu(hMenu, MF_STRING, 2, lblPin);
                     ::AppendMenu(hMenu, MF_SEPARATOR, 0, nullptr);
-                    ::AppendMenu(hMenu, MF_STRING, 3, L"Borrar todo");
+                    ::AppendMenu(hMenu, MF_STRING, 3, lblClear);
 
-                    if (self->m_buffer && self->m_buffer->Get(item).pinned)
+                    if (pinned)
                         ::CheckMenuItem(hMenu, 2, MF_BYCOMMAND | MF_CHECKED);
 
                     POINT pt{ x, y };
@@ -480,12 +525,17 @@ namespace AeroClip::Core {
             int item = self->HitTestItem(x, y);
             if (item >= 0) {
                 HMENU hMenu = ::CreatePopupMenu();
-                ::AppendMenu(hMenu, MF_STRING, 1, L"Eliminar");
-                ::AppendMenu(hMenu, MF_STRING, 2, L"Anclar");
+                const wchar_t* lblDelete  = AeroClip::UI::LocMenuDelete();
+                const wchar_t* lblClear   = AeroClip::UI::LocMenuClearAll();
+                const bool pinned = self->m_buffer && self->m_buffer->Get(item).pinned;
+                const wchar_t* lblPin = pinned ? AeroClip::UI::LocMenuUnpin()
+                                               : AeroClip::UI::LocMenuPin();
+                ::AppendMenu(hMenu, MF_STRING, 1, lblDelete);
+                ::AppendMenu(hMenu, MF_STRING, 2, lblPin);
                 ::AppendMenu(hMenu, MF_SEPARATOR, 0, nullptr);
-                ::AppendMenu(hMenu, MF_STRING, 3, L"Borrar todo");
+                ::AppendMenu(hMenu, MF_STRING, 3, lblClear);
 
-                if (self->m_buffer && self->m_buffer->Get(item).pinned)
+                if (pinned)
                     ::CheckMenuItem(hMenu, 2, MF_BYCOMMAND | MF_CHECKED);
 
                 POINT pt{ x, y };
@@ -509,6 +559,12 @@ namespace AeroClip::Core {
             self->m_scrollY -= delta / WHEEL_DELTA * step;
             if (self->m_scrollY < 0) self->m_scrollY = 0;
             if (self->m_scrollY > maxScroll) self->m_scrollY = maxScroll;
+            // Synchronize the native scrollbar (move the thumb visually).
+            SCROLLINFO si = {};
+            si.cbSize = sizeof(si);
+            si.fMask  = SIF_POS;
+            si.nPos   = self->m_scrollY;
+            ::SetScrollInfo(self->m_hScroll, SB_CTL, &si, TRUE);
             ::InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
@@ -520,7 +576,7 @@ namespace AeroClip::Core {
             RECT rc;
             ::GetClientRect(hwnd, &rc);
 
-            // Double buffer para eliminar flickering.
+            // Double buffer to eliminate flickering.
             HDC mem = ::CreateCompatibleDC(hdc);
             HBITMAP bmp = ::CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
             HGDIOBJ oldBmp = ::SelectObject(mem, bmp);
@@ -534,7 +590,7 @@ namespace AeroClip::Core {
         }
 
         case WM_CLOSE:
-            // El boton X nativo envia WM_CLOSE — cerramos el popup.
+            // The native X button sends WM_CLOSE
             self->Hide();
             return 0;
 
@@ -545,16 +601,27 @@ namespace AeroClip::Core {
 
         case WM_DWMCOMPOSITIONCHANGED:
         case WM_THEMECHANGED: {
-            if (self->m_te) self->m_te->Refresh();
-            // Tras refrescar tema el chrome nativo puede tener otro tamano;
-            // forzamos reflow para que el area cliente siga siendo 360x520.
-            self->ReflowForTheme();
-            if (msg == WM_DWMCOMPOSITIONCHANGED) {
-                self->DisableAeroCaption();
-                self->EnableAeroCaption();
-            }
-            ::InvalidateRect(hwnd, nullptr, FALSE);
+
+            ::SetTimer(hwnd, FlyoutWindow::kThemeCoalesceTimerId,
+                        FlyoutWindow::kThemeCoalesceMs, nullptr);
             return 0;
+        }
+
+        case WM_TIMER: {
+            if (wp == FlyoutWindow::kThemeCoalesceTimerId) {
+                ::KillTimer(hwnd, FlyoutWindow::kThemeCoalesceTimerId);
+                if (self->m_te) self->m_te->Refresh();
+                self->DisableAeroCaption();
+                ::DwmFlush();
+                ::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE |
+                    SWP_NOSIZE | SWP_FRAMECHANGED);
+                self->ReflowForTheme();
+                self->EnableAeroCaption();
+                ::InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+            break;
         }
 
         case WM_NCDESTROY:

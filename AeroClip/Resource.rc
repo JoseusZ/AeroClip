@@ -1,0 +1,38 @@
+﻿// =============================================================================
+// AeroClip - Recurso de version (VS_VERSION_INFO).
+// El numero de version y los metadatos vienen de ../include/Version.h.
+// Cambia esos macros y el .exe resultante tendra la nueva version.
+// =============================================================================
+
+#include "..\include\Version.h"
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION    AEROCLIP_FILEVERSION_NUM
+PRODUCTVERSION AEROCLIP_PRODUCTVERSION_NUM
+FILEFLAGSMASK  0x3fL
+FILEFLAGS      0x0L
+FILEOS         VOS__WINDOWS32
+FILETYPE       VFT_APP
+FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		// Lang: English-US (0x0409), Charset: Multilingual (0x04E4)
+		BLOCK "040904E4"
+		BEGIN
+			VALUE "CompanyName",      AEROCLIP_COMPANY_NAME
+			VALUE "FileDescription",  AEROCLIP_FILE_DESCRIPTION
+			VALUE "FileVersion",      AEROCLIP_VERSION_STRING_
+			VALUE "InternalName",     AEROCLIP_INTERNAL_NAME
+			VALUE "LegalCopyright",   AEROCLIP_LEGAL_COPYRIGHT
+			VALUE "OriginalFilename", AEROCLIP_ORIGINAL_FILENAME
+			VALUE "ProductName",      AEROCLIP_PRODUCT_NAME
+			VALUE "ProductVersion",   AEROCLIP_VERSION_STRING_
+		END
+	END
+	BLOCK "VarFileInfo"
+	BEGIN
+		VALUE "Translation", 0x0409, 1252
+	END
+END

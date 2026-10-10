@@ -100,47 +100,55 @@ namespace AeroClip::Clipboard {
         return ::DefWindowProc(hwnd, msg, wp, lp);
     }
 
-    static ULONGLONG s_lastTick = 0;
+    static ULONGLONG s_lastSuccessTick = 0;
 
-    void ClipboardMonitor::OnClipboardUpdate() {
-        if (!m_buffer) return;
+        void ClipboardMonitor::OnClipboardUpdate() {
+            if (!m_buffer) return;
+                    ULONGLONG now = ::GetTickCount64();
+                    if (now - s_lastSuccessTick < 10) return;
 
-        ULONGLONG now = ::GetTickCount64();
-        if (now - s_lastTick < 50) return;
-        s_lastTick = now;
-
-        ProcessCurrent();
-    }
-
-    void ClipboardMonitor::ProcessCurrent() {
-        if (::IsClipboardFormatAvailable(CF_UNICODETEXT)) {
-            LPCVOID pData = nullptr;
-            DWORD cb = 0;
-            if (DataConverter::ReadUnicodeText(&pData, &cb) && pData && cb > 0) {
-                if (m_buffer->Add(ItemKind::Text, pData, cb) == 0) {
-                    if (m_flyoutHwnd && ::IsWindow(m_flyoutHwnd)) {
-                        ::PostMessage(m_flyoutHwnd, MSG_CLIPBOARD_UPDATED, 0, 0);
-                    }
-                }
-                ::SecureZeroMemory(const_cast<LPVOID>(pData), cb);
-                ::HeapFree(::GetProcessHeap(), 0, const_cast<LPVOID>(pData));
+            if (ProcessCurrent()) {
+                s_lastSuccessTick = now;
             }
-            return;
         }
 
-        if (::IsClipboardFormatAvailable(CF_DIB)) {
+        BOOL ClipboardMonitor::ProcessCurrent() {
+            BOOL added = FALSE;
+
+            if (::IsClipboardFormatAvailable(CF_UNICODETEXT)) {
+                LPCVOID pData = nullptr;
+                DWORD cb = 0;
+                if (DataConverter::ReadUnicodeText(&pData, &cb) && pData && cb > 0) {
+                    if (m_buffer->Add(ItemKind::Text, pData, cb) == 0) {
+                        if (m_flyoutHwnd && ::IsWindow(m_flyoutHwnd)) {
+                            ::PostMessage(m_flyoutHwnd, MSG_CLIPBOARD_UPDATED, 0, 0);
+                        }
+                        added = TRUE;
+                    }
+                    ::SecureZeroMemory(const_cast<LPVOID>(pData), cb);
+                    ::HeapFree(::GetProcessHeap(), 0, const_cast<LPVOID>(pData));
+                }
+                return added;
+            }
+
+            // Image: try CF_DIB first (PasteImage from AeroClip, Snip & Sketch, etc.)
             LPCVOID pData = nullptr;
             DWORD cb = 0;
-            if (DataConverter::ReadDibImage(&pData, &cb) && pData && cb > 0) {
+            BOOL got = DataConverter::ReadDibImage(&pData, &cb);
+            if (!got) {
+                got = DataConverter::ReadBitmapAsDIB(&pData, &cb);
+            }
+            if (got && pData && cb > 0) {
                 if (m_buffer->Add(ItemKind::Image, pData, cb) == 0) {
                     if (m_flyoutHwnd && ::IsWindow(m_flyoutHwnd)) {
                         ::PostMessage(m_flyoutHwnd, MSG_CLIPBOARD_UPDATED, 0, 0);
                     }
+                    added = TRUE;
                 }
                 ::SecureZeroMemory(const_cast<LPVOID>(pData), cb);
                 ::HeapFree(::GetProcessHeap(), 0, const_cast<LPVOID>(pData));
             }
+            return added;
         }
-    }
 
 } // namespace AeroClip::Clipboard
