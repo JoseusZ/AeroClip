@@ -1,8 +1,4 @@
-﻿// AeroClip - Win32 entry point.
-// Native background application: registers Win+V, monitors the clipboard
-// via WM_CLIPBOARDUPDATE, and displays the flyout with encrypted history in RAM.
-
-#include "AeroClip.h"
+﻿#include "AeroClip.h"
 #include "Version.h"
 #include "UI/ThemeEngine.h"
 #include "UI/Localization.h"
@@ -10,6 +6,7 @@
 #include "Clipboard/ClipboardMonitor.h"
 #include "Core/FlyoutWindow.h"
 #include "Core/HotkeyManager.h"
+#include "UI/WinXMenu.h"
 #include "Utils/InputInjector.h"
 #include "Utils/AutoStart.h"
 #include <objbase.h>
@@ -25,14 +22,11 @@ static UI::ThemeEngine              g_theme;
 static Clipboard::ClipboardMonitor  g_monitor;
 static Core::FlyoutWindow           g_flyout;
 static Core::HotkeyManager          g_hotkey;
+static UI::WinXMenu                 g_winx;
 
 static HWND g_hostHwnd = nullptr;
 
-// ---- Balloon / toast compatible con Windows 7 ------------------------
-// En Windows 7 la API legacy de Shell_NotifyIcon muestra el balloon
-// directamente (no lo enruta por Windows Runtime como Win10/11), asi
-// que la tecnica "agregar y borrar inmediatamente" SI funciona: el
-// balloon ya fue encolado por el shell antes de que borremos el icono.
+// ---- Balloon / toast 
 static constexpr UINT WM_TRAYICON = WM_USER + 10;
 
 static void ShowBalloonTip(LPCWSTR title, LPCWSTR text) {
@@ -49,8 +43,7 @@ static void ShowBalloonTip(LPCWSTR title, LPCWSTR text) {
     ::wcscpy_s(nid.szInfo, text);
     nid.dwInfoFlags      = NIIF_WARNING;
     if (::Shell_NotifyIconW(NIM_ADD, &nid)) {
-        // Bombea mensajes para que el shell procese el balloon antes de
-        // borrar el icono (en Win7 basta con un par de PeekMessage).
+        
         MSG msg;
         for (int i = 0; i < 5; i++) {
             if (::PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -62,7 +55,6 @@ static void ShowBalloonTip(LPCWSTR title, LPCWSTR text) {
         ::Shell_NotifyIconW(NIM_DELETE, &nid);
     }
 }
-// ---------------------------------------------------------------------------
 
 static void PerformPasteFromIndex(int idx) {
         if (idx < 0 || idx >= g_buffer.Count()) return;
@@ -76,14 +68,17 @@ static void PerformPasteFromIndex(int idx) {
 LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_HOTKEY:
-        if (wp == kHotkeyId) g_flyout.Toggle();
+        if (wp == kHotkeyId)
+            g_flyout.Toggle();
+        else if (wp == kWinXHotkeyId)
+            g_winx.Show();
         return 0;
     case MSG_PERFORM_PASTE:
 
         PerformPasteFromIndex(static_cast<int>(wp));
         return 0;
     case WM_TRAYICON:
-        // Icono efimero, ignorar cualquier mensaje residual.
+
         return 0;
     case WM_DESTROY:
         ::PostQuitMessage(0);
@@ -107,8 +102,6 @@ static BOOL CreateHostWindow(HINSTANCE hInst) {
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
 
-    // Log silencioso de la version compilada (visible con DebugView / VS Output).
-    // No afecta la UI ni el comportamiento de la app.
     ::OutputDebugStringW((AeroClip::FullVersionW() + L" - arrancando\r\n").c_str());
 
     Gdiplus::GdiplusStartupInput gdiStartupIn{};
@@ -123,9 +116,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
     }
 
     // First-run auto-start: writes HKCU\Software\Microsoft\Windows\
-    // CurrentVersion\Run\AeroClip so the app starts with Windows and
-    // shows up in msconfig / the Startup UI. If the entry already
-    // exists (enabled or disabled), the user's prior choice is kept.
+
     if (!AeroClip::Utils::AutoStart::RegisterOnFirstRun()) {
         ::OutputDebugStringW(L"AeroClip: AutoStart registration failed (no-op)\n");
     }
@@ -145,16 +136,12 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
                                       static_cast<WPARAM>(idx), 0);
     });
 
-    // Callback: cuando TogglePin es rechazado por kMaxPinned, mostramos
-    // un balloon tip nativo pidiendo al usuario que desancle uno primero.
     g_buffer.SetOnPinLimitExceeded([]() {
         const std::wstring msg = AeroClip::UI::LocPinLimitMessage(kMaxPinned);
         ShowBalloonTip(AeroClip::UI::LocPinLimitTitle(), msg.c_str());
     });
 
-    // Carga los anclados persistentes del arranque anterior. Esto se hace
-    // ANTES de iniciar el monitor del portapapeles para que las nuevas
-    // capturas que lleguen no se mezclen ni hagan overflow sobre los pinned.
+    
     int loaded = g_buffer.LoadPinnedFromDisk();
     if (loaded > 0) {
         g_flyout.Refresh();

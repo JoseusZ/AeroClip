@@ -11,26 +11,19 @@ namespace AeroClip {
     inline constexpr int kHistoryMax = 10;
     inline constexpr int kFlyoutWidth = 250;
     inline constexpr int kFlyoutHeight = 425;
-
-    // Limite estricto de elementos anclados persistentes.
-    // Aeroclip mantiene una "banda de fijados" pequena y deliberada.
     inline constexpr int kMaxPinned = 4;
 
-    // Encabezado del fichero persistente de un item anclado.
-    // Ubicacion: %LOCALAPPDATA%\AeroClip\Pinned\<seq>.acp
-    // El cuerpo es DPAPI cifrado con clave de usuario (CryptProtectData /
-    // CryptUnprotectData), por lo que puede ser descifrado en otro arranque
-    // del mismo usuario pero NO por otra cuenta de Windows.
+
 #pragma pack(push, 1)
     struct PinnedHeader {
-        DWORD    magic;          // 'ACPB' = AeroClip Pinned Block
-        BYTE     version;        // 1
-        BYTE     kind;           // ItemKind (Text=1, Image=2)
-        BYTE     reserved[2];    // 0
-        DWORD    cbData;         // tamano original (sin comprimir)
-        DWORD    cbLz4;          // tamano LZ4 comprimido (0 para texto)
-        DWORD    cbStored;       // tamano del cuerpo (DPAPI)
-        FILETIME ftCaptured;     // timestamp original
+        DWORD    magic;          
+        BYTE     version;       
+        BYTE     kind;          
+        BYTE     reserved[2];  
+        DWORD    cbData;         
+        DWORD    cbLz4;         
+        DWORD    cbStored;       
+        FILETIME ftCaptured;    
     };
 #pragma pack(pop)
     static_assert(sizeof(PinnedHeader) == 28, "PinnedHeader size mismatch");
@@ -38,7 +31,7 @@ namespace AeroClip {
     // Byte limit per item. Keeps the worst-case buffer size at
     // ~kHistoryMax * kMaxItemBytes (15 * 8 MB = 120 MB) and prevents
     // 4K screenshots or huge dumps from saturating RAM.
-    inline constexpr DWORD kMaxTextBytes = 4 * 1024 * 1024;  // 4 MB texto
+    inline constexpr DWORD kMaxTextBytes = 4 * 1024 * 1024;  // 4 MB text
     inline constexpr DWORD kMaxImageBytes = 8 * 1024 * 1024; // 8 MB DIB
 
     enum class ItemKind : BYTE {
@@ -48,15 +41,13 @@ namespace AeroClip {
 
     struct HistoryItem {
         ItemKind kind = ItemKind::Text;
-        DWORD    cbData   = 0;     // tamano original (sin comprimir)
-        DWORD    cbLz4    = 0;     // tamano LZ4 comprimido (sin DPAPI); 0 para texto
-        DWORD    cbStored = 0;     // tamano en disco (lz4 + dpapi); 0 para texto
-        LPVOID   pData    = nullptr;  // SOLO texto (HeapAlloc + DPAPI); nullptr para imagen
+        DWORD    cbData   = 0;     // original size (without compression)
+        DWORD    cbLz4    = 0;     // compressed LZ4 size (without DPAPI); 0 for text
+        DWORD    cbStored = 0;     // size on disk (lz4 + dpapi); 0 for text
+        LPVOID   pData    = nullptr;  // text ONLY (HeapAlloc + DPAPI); nullptr for image
         SIZE_T   cbAlloc  = 0;
         BOOL     pinned   = FALSE;
         FILETIME ftCaptured = {};
-        // --- NUEVO: persistencia en %TEMP%\AeroClip\<pid>_<seq>.bin ---
-        // Solo se usan cuando kind == Image. Para texto permanecen vacios.
         WCHAR    szTempPath[MAX_PATH] = {};
         BOOL     bHasTemp = FALSE;
     };
@@ -69,7 +60,9 @@ namespace AeroClip {
 
     inline constexpr UINT MSG_CLIPBOARD_UPDATED = WM_USER + 1;
     inline constexpr UINT MSG_PERFORM_PASTE      = WM_USER + 2;
-    inline constexpr int  kHotkeyId = 1;
+    inline constexpr int  kHotkeyId    = 1;
+    // Win+X
+    inline constexpr int  kWinXHotkeyId = 2;
 
     struct ClipboardSession {
         BOOL ok;

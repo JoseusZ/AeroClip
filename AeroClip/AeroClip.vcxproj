@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -154,6 +154,7 @@
     <ClCompile Include="..\src\UI\ItemRenderer.cpp" />
     <ClCompile Include="..\src\Core\HotkeyManager.cpp" />
     <ClCompile Include="..\src\Core\FlyoutWindow.cpp" />
+    <ClCompile Include="..\src\UI\WinXMenu.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="app.manifest" />
@@ -169,6 +170,7 @@
     <ClInclude Include="..\include\UI\ItemRenderer.h" />
     <ClInclude Include="..\include\Core\HotkeyManager.h" />
     <ClInclude Include="..\include\Core\FlyoutWindow.h" />
+    <ClInclude Include="..\include\UI\WinXMenu.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc" />
