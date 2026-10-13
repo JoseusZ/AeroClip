@@ -21,6 +21,7 @@ The whole project is C++17 over the raw Win32 API. There is no MFC, no .NET runt
 ## Features
 
 - Global hotkey `Win + V` to toggle the history flyout from anywhere, including full-screen applications.
+- Global hotkey `Win + X` to open the Power User Menu: a Win8-style menu anchored above the Start button, rendered with the native Windows 7 context menu look. All entries are dispatched through the corresponding Win7 native binaries, so the menu fills the gap left by the missing Power User Task Menu on Windows 7 Professional.
 - Last ten items in a rolling, in-memory buffer.
 - Text and image capture. Unicode text is read directly. Bitmaps (DDB) are converted to DIB on the fly because Windows Print Screen typically exposes the capture as `CF_BITMAP` without a matching `CF_DIB`.
 - Automatic deduplication of the most recent item, so copying the same snippet twice does not grow the buffer.
@@ -80,12 +81,38 @@ The maximum number of pinned items is fixed at four. When the user clicks the pi
 | Shortcut   | Action                                            |
 | ---------- | ------------------------------------------------- |
 | `Win + V`  | Show or hide the history flyout.                  |
+| `Win + X`  | Open the Power User Menu (Win8-style, Win7 look). |
 | `Esc`      | Close the flyout when it is visible.              |
 | `Enter`    | Paste the highlighted entry.                      |
 | Click      | Paste the entry under the pointer.                |
 | `Delete`   | Remove the highlighted entry.                     |
 
 The hotkey is registered with `MOD_NOREPEAT` so the operating system does not generate repeated hotkey messages while the keys are held down.
+
+## Win+X Power User Menu
+
+Pressing `Win + X` opens a menu inspired by the Windows 8 Power User Menu, but rendered with the native Windows 7 context menu look so it feels like it belongs to the OS. The menu is anchored above the Start button at the bottom-left of the work area, and uses the same accent, fonts, and selection feedback as any other Win7 native menu.
+
+The menu is the answer to a real gap on Windows 7 Professional: this edition has no Power panel, no Mobility Center, and no built-in `Win + X` shortcut, so quick access to power, device management, and event-viewer actions is hidden behind several Control Panel hops. AeroClip surfaces those entries in one keystroke, dispatched through the corresponding Win7 native binaries, and the strings adapt to the system UI language (English or Spanish, the two languages currently in the localization table).
+
+Available entries (some open an external tool, some open a Control Panel applet, some trigger a power action):
+
+- Programs and Features (`appwiz.cpl`).
+- Mobility Center (`mblctr.exe`).
+- Power Options (`powercfg.cpl`).
+- Event Viewer (`eventvwr.exe`).
+- System (`sysdm.cpl`).
+- Device Manager (`devmgmt.msc`).
+- Network Connections (`ncpa.cpl`).
+- Disk Management (`diskmgmt.msc`).
+- Computer Management (`compmgmt.msc`).
+- Command Prompt and Command Prompt (Admin).
+- Task Manager (`taskmgr.exe`).
+- Control Panel (`control.exe`).
+- File Explorer (`explorer.exe`).
+- Search, Run, Desktop, and a submenu for Sleep, Restart, Sign out, and Shut down.
+
+The menu is owned by a dedicated hidden top-level anchor window so it dismisses on any outside click without being tied to the history flyout lifecycle.
 
 ## Right-click menu
 
@@ -154,6 +181,7 @@ AeroClip/
       ItemRenderer.h        # Card, thumbnail, badge, text label
       ThemeEngine.h         # Aero / Basic / Classic detection and palette
       Localization.h        # EN/ES string table
+      WinXMenu.h            # Win+X Power User Menu, Win7 native look
     Utils/
       InputInjector.h       # SendInput-driven Ctrl+V
   src/
@@ -169,6 +197,7 @@ AeroClip/
     UI/
       ItemRenderer.cpp
       ThemeEngine.cpp
+      WinXMenu.cpp          # Win+X Power User Menu implementation
     Utils/
       InputInjector.cpp
   LICENSE                   # GNU General Public License v3.0
@@ -204,6 +233,7 @@ Todo el proyecto es C++17 sobre la API nativa de Win32. No hay MFC, ni runtime .
 ## Funcionalidades
 
 - Hotkey global `Win + V` para mostrar u ocultar el flyout desde cualquier sitio, incluso en aplicaciones a pantalla completa.
+- Hotkey global `Win + X` para abrir el Menú de usuario avanzado: un menú estilo Windows 8 anclado sobre el botón Inicio, renderizado con el aspecto del menú contextual nativo de Windows 7. Todas las entradas se despachan a través de los binarios nativos equivalentes de Windows 7, cubriendo el hueco que deja la ausencia del Power User Task Menu en Windows 7 Professional.
 - Últimos diez elementos en un búfer circular en memoria.
 - Captura de texto e imágenes. El texto Unicode se lee directamente. Los bitmaps (DDB) se convierten a DIB sobre la marcha, porque la tecla `Impr Pant` de Windows suele exponer la captura como `CF_BITMAP` sin un `CF_DIB` asociado.
 - Deduplicación automática del elemento más reciente: copiar dos veces lo mismo no infla el búfer.
@@ -263,12 +293,38 @@ El número máximo de elementos anclados es cuatro. Cuando el usuario hace clic 
 | Atajo       | Acción                                                |
 | ----------- | ----------------------------------------------------- |
 | `Win + V`   | Mostrar u ocultar el flyout del historial.            |
+| `Win + X`   | Abrir el Menú de usuario avanzado (estilo Win8, look Win7). |
 | `Esc`       | Cerrar el flyout si está visible.                     |
 | `Enter`     | Pegar la entrada resaltada.                           |
 | Clic        | Pegar la entrada bajo el puntero.                     |
 | `Suprimir`  | Eliminar la entrada resaltada.                        |
 
 El hotkey se registra con `MOD_NOREPEAT` para que el sistema operativo no genere mensajes repetidos mientras las teclas permanecen pulsadas.
+
+## Menú de usuario avanzado (Win+X)
+
+Al pulsar `Win + X` se abre un menú inspirado en el Power User Menu de Windows 8, pero con el aspecto del menú contextual nativo de Windows 7, de modo que encaja visualmente con el sistema. El menú se ancla sobre el botón Inicio en la esquina inferior izquierda del área de trabajo y emplea el mismo acento, tipografías y realce de selección que cualquier otro menú nativo de Win7.
+
+El menú cubre un hueco real de Windows 7 Professional: esta edición no tiene panel de energía, no tiene Centro de movilidad y no incorpora el atajo `Win + X` integrado, por lo que el acceso rápido a energía, administración de dispositivos y visor de eventos queda enterrado a varios clics del Panel de control. AeroClip agrupa esas entradas en una sola pulsación, despachándolas a través de los binarios nativos equivalentes de Windows 7, y las cadenas se adaptan al idioma de la UI del sistema (inglés o español, los dos idiomas presentes en la tabla de localización).
+
+Entradas disponibles (algunas abren una herramienta externa, otras un applet del Panel de control, otras disparan una acción de energía):
+
+- Programas y características (`appwiz.cpl`).
+- Centro de movilidad (`mblctr.exe`).
+- Opciones de energía (`powercfg.cpl`).
+- Visor de eventos (`eventvwr.exe`).
+- Sistema (`sysdm.cpl`).
+- Administrador de dispositivos (`devmgmt.msc`).
+- Conexiones de red (`ncpa.cpl`).
+- Administración de discos (`diskmgmt.msc`).
+- Administración de equipos (`compmgmt.msc`).
+- Símbolo del sistema y Símbolo del sistema (administrador).
+- Administrador de tareas (`taskmgr.exe`).
+- Panel de control (`control.exe`).
+- Explorador de Windows (`explorer.exe`).
+- Buscar, Ejecutar, Escritorio y un submenú con Suspender, Reiniciar, Cerrar sesión y Apagar.
+
+El menú es propiedad de una ventana ancla top-level oculta y dedicada, de modo que se cierra con cualquier clic exterior sin quedar atado al ciclo de vida del flyout del historial.
 
 ## Menú contextual
 
@@ -337,6 +393,7 @@ AeroClip/
       ItemRenderer.h        # Tarjeta, miniatura, badge, etiqueta
       ThemeEngine.h         # Detección Aero / Basic / Classic y paleta
       Localization.h        # Tabla de cadenas EN/ES
+      WinXMenu.h            # Menú de usuario avanzado Win+X, look nativo Win7
     Utils/
       InputInjector.h       # Ctrl+V simulado con SendInput
   src/
@@ -352,6 +409,7 @@ AeroClip/
     UI/
       ItemRenderer.cpp
       ThemeEngine.cpp
+      WinXMenu.cpp          # Implementación del menú Win+X
     Utils/
       InputInjector.cpp
   LICENSE                   # GNU General Public License v3.0

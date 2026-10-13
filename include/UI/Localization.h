@@ -101,4 +101,31 @@ namespace AeroClip::UI {
 		return buf;
 	}
 
+	// --- Items del menu Win+X -----------------------------------------
+	// Bloque 1
+	inline const wchar_t* LocWinXApps()        { return CurrentLanguage() == Language::Spanish ? L"Aplicaciones y caracter\xedsticas"  : L"Apps & Features"; }
+	inline const wchar_t* LocWinXPower()       { return CurrentLanguage() == Language::Spanish ? L"Opciones de energ\u00eda"             : L"Power Options"; }
+	inline const wchar_t* LocWinXEventVw()     { return CurrentLanguage() == Language::Spanish ? L"Visor de eventos"                  : L"Event Viewer"; }
+	inline const wchar_t* LocWinXSystem()      { return CurrentLanguage() == Language::Spanish ? L"Sistema"                           : L"System"; }
+	inline const wchar_t* LocWinXDevMgr()      { return CurrentLanguage() == Language::Spanish ? L"Administrador de dispositivos"     : L"Device Manager"; }
+	inline const wchar_t* LocWinXNet()         { return CurrentLanguage() == Language::Spanish ? L"Conexiones de red"                 : L"Network Connections"; }
+	inline const wchar_t* LocWinXDiskMgmt()    { return CurrentLanguage() == Language::Spanish ? L"Administraci\xf3n de discos"      : L"Disk Management"; }
+	inline const wchar_t* LocWinXCompMgmt()    { return CurrentLanguage() == Language::Spanish ? L"Administraci\xf3n de equipos"     : L"Computer Management"; }
+	inline const wchar_t* LocWinXPowershell()  { return CurrentLanguage() == Language::Spanish ? L"Windows PowerShell"                : L"Windows PowerShell"; }
+	inline const wchar_t* LocWinXPowershellA() { return CurrentLanguage() == Language::Spanish ? L"Windows PowerShell (Administrador)" : L"Windows PowerShell (Admin)"; }
+	// Bloque 2
+	inline const wchar_t* LocWinXTaskMgr()     { return CurrentLanguage() == Language::Spanish ? L"Administrador de tareas"           : L"Task Manager"; }
+	inline const wchar_t* LocWinXControl()     { return CurrentLanguage() == Language::Spanish ? L"Panel de control"                  : L"Control Panel"; }
+	inline const wchar_t* LocWinXExplorer()    { return CurrentLanguage() == Language::Spanish ? L"Explorador de archivos"            : L"File Explorer"; }
+	inline const wchar_t* LocWinXSearch()      { return CurrentLanguage() == Language::Spanish ? L"Buscar"                            : L"Search"; }
+	inline const wchar_t* LocWinXRun()         { return CurrentLanguage() == Language::Spanish ? L"Ejecutar"                          : L"Run"; }
+	// Bloque 3 + submenu Apagar
+	inline const wchar_t* LocWinXShutDownSub() { return CurrentLanguage() == Language::Spanish ? L"Apagar o cerrar sesi\xf3n"        : L"Shut down or sign out"; }
+	inline const wchar_t* LocWinXDesktop()     { return CurrentLanguage() == Language::Spanish ? L"Escritorio"                        : L"Desktop"; }
+	inline const wchar_t* LocWinXLock()        { return CurrentLanguage() == Language::Spanish ? L"Bloquear"                          : L"Lock"; }
+	inline const wchar_t* LocWinXSignOut()     { return CurrentLanguage() == Language::Spanish ? L"Cerrar sesi\xf3n"                  : L"Sign out"; }
+	inline const wchar_t* LocWinXSleep()       { return CurrentLanguage() == Language::Spanish ? L"Suspender"                         : L"Sleep"; }
+	inline const wchar_t* LocWinXRestart()     { return CurrentLanguage() == Language::Spanish ? L"Reiniciar"                         : L"Restart"; }
+	inline const wchar_t* LocWinXShutDown()    { return CurrentLanguage() == Language::Spanish ? L"Apagar"                            : L"Shut down"; }
+
 } // namespace AeroClip::UI
