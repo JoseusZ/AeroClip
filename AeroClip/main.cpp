@@ -11,6 +11,7 @@
 #include "Core/FlyoutWindow.h"
 #include "Core/HotkeyManager.h"
 #include "Utils/InputInjector.h"
+#include "Utils/AutoStart.h"
 #include <objbase.h>
 #include <gdiplus.h>
 #include <shellapi.h>
@@ -119,6 +120,14 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int) {
     if (!CreateHostWindow(hInst)) {
         Gdiplus::GdiplusShutdown(gdiToken);
         return 1;
+    }
+
+    // First-run auto-start: writes HKCU\Software\Microsoft\Windows\
+    // CurrentVersion\Run\AeroClip so the app starts with Windows and
+    // shows up in msconfig / the Startup UI. If the entry already
+    // exists (enabled or disabled), the user's prior choice is kept.
+    if (!AeroClip::Utils::AutoStart::RegisterOnFirstRun()) {
+        ::OutputDebugStringW(L"AeroClip: AutoStart registration failed (no-op)\n");
     }
 
     if (!g_flyout.Create(hInst, g_buffer, g_theme)) {

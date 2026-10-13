@@ -10,7 +10,7 @@
 // --- Numero de version (cambia aqui y solo aqui) -----------------------------
 #define AEROCLIP_VERSION_MAJOR    1
 #define AEROCLIP_VERSION_MINOR    0
-#define AEROCLIP_VERSION_PATCH    0
+#define AEROCLIP_VERSION_PATCH    1
 #define AEROCLIP_VERSION_BUILD    0
 
 // --- Tuplas numericas para FILEVERSION / PRODUCTVERSION (4 WORDs) ------------

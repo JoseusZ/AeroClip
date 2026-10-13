@@ -32,7 +32,8 @@ The whole project is C++17 over the raw Win32 API. There is no MFC, no .NET runt
 - LZ4 lossless compression for image payloads before they hit disk, so a four-megapixel screenshot lands at well under a megabyte on the pinned store.
 - Per-process cleanup of temporary image files on startup and on shutdown. Orphans from previous runs are removed automatically.
 - A balloon tip in the notification area is shown when the user attempts to pin more than the configured maximum. The icon is added and immediately deleted in the same notification cycle, so it never lingers in the system tray.
-- Zero network activity, zero telemetry, zero background services, zero registry writes, zero scheduled tasks.
+- On first launch the application registers itself under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (value name `AeroClip`) so it starts automatically with Windows. The entry is shown in `msconfig` and in the Startup section of the Control Panel, where the user can enable or disable it like any other startup entry. No installer and no admin rights are required.
+- Zero network activity, zero telemetry, zero background services, zero scheduled tasks. The only registry write is the single `HKCU\...\Run` value described above.
 
 ### Aero Glass (DWM composition on)
 
@@ -102,8 +103,8 @@ The hotkey is registered with `MOD_NOREPEAT` so the operating system does not ge
 - Pinned text and images are stored only in the current user profile, under `%LOCALAPPDATA%\AeroClip\Pinned\`, encrypted with `CryptProtectData` and readable only by the same Windows user.
 - Non-pinned text is held in RAM, encrypted with `CryptProtectMemory` (`CRYPTPROTECTMEMORY_SAME_PROCESS`), and zeroed when the process exits or the entry is removed.
 - Non-pinned images are streamed to `%TEMP%\AeroClip\<pid>_<seq>.bin` (LZ4 compressed, then DPAPI-encrypted in place), and the files are deleted on process exit. Orphans from previous runs are removed automatically on startup.
-- The release binary does not modify the Windows registry, does not install a service, does not register a scheduled task, and does not place itself in any startup location.
-- The release binary is statically linked against the C runtime. It depends only on the system DLLs that ship with Windows 7: `kernel32`, `user32`, `gdi32`, `gdiplus`, `shell32`, `ole32`, `uxtheme`, `dwmapi`, `crypt32`.
+- On first launch the application registers itself under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (value name `AeroClip`) so it starts automatically with Windows and shows up in `msconfig` and in the Startup section of the Control Panel. The entry uses the current executable path resolved via `GetModuleFileNameW`, so no install step is required. If the user disables the entry through `msconfig`, Windows renames the value to `AeroClip_disabled` and the application respects that choice: it never re-enables itself on subsequent launches. To re-enable, do it from `msconfig` or the Startup UI. The application writes nothing else to the registry and does not install a service or a scheduled task.
+- The release binary is statically linked against the C runtime. It depends only on the system DLLs that ship with Windows 7: `kernel32`, `user32`, `gdi32`, `gdiplus`, `shell32`, `ole32`, `uxtheme`, `dwmapi`, `crypt32`, `advapi32`.
 
 ## Building from source
 
@@ -214,7 +215,8 @@ Todo el proyecto es C++17 sobre la API nativa de Win32. No hay MFC, ni runtime .
 - Compresión sin pérdida LZ4 sobre las imágenes antes de escribirlas a disco, de modo que una captura de cuatro megapíxeles ocupa mucho menos de un megabyte en el almacén de anclados.
 - Limpieza por PID de los archivos temporales de imagen al arrancar y al cerrar. Los huérfanos de ejecuciones anteriores se eliminan automáticamente.
 - Globo de notificación en el área de notificación cuando el usuario intenta anclar más del máximo configurado. El icono se añade y se elimina de inmediato en el mismo ciclo, por lo que nunca queda visible en la bandeja del sistema.
-- Cero actividad de red, cero telemetría, cero servicios en segundo plano, cero escrituras en el registro, cero tareas programadas.
+- En el primer arranque la aplicación se registra en `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (nombre del valor `AeroClip`) para iniciar con Windows automáticamente. La entrada aparece en `msconfig` y en la sección Inicio del Panel de control, donde el usuario puede habilitarla o deshabilitarla como cualquier otra entrada de inicio. No requiere instalador ni permisos de administrador.
+- Cero actividad de red, cero telemetría, cero servicios en segundo plano, cero tareas programadas. La única escritura en el registro es el valor `HKCU\...\Run` descrito arriba.
 
 ### Aero Glass (composición DWM activada)
 
@@ -284,8 +286,8 @@ El hotkey se registra con `MOD_NOREPEAT` para que el sistema operativo no genere
 - Los anclados de texto e imagen se almacenan únicamente en el perfil del usuario actual, en `%LOCALAPPDATA%\AeroClip\Pinned\`, cifrados con `CryptProtectData` y solo legibles por el mismo usuario de Windows.
 - El texto no anclado se mantiene en RAM, cifrado con `CryptProtectMemory` (`CRYPTPROTECTMEMORY_SAME_PROCESS`), y se sobrescribe con ceros cuando el proceso sale o la entrada se elimina.
 - Las imágenes no ancladas se vuelcan a `%TEMP%\AeroClip\<pid>_<seq>.bin` (comprimidas con LZ4 y luego cifradas in-place con DPAPI), y los archivos se eliminan al cerrar el proceso. Los huérfanos de ejecuciones anteriores se eliminan automáticamente al arrancar.
-- El binario de release no modifica el registro de Windows, no instala servicios, no registra tareas programadas y no se coloca en ninguna ubicación de inicio.
-- El binario de release se enlaza estáticamente contra el runtime de C. Solo depende de las DLL del sistema que vienen con Windows 7: `kernel32`, `user32`, `gdi32`, `gdiplus`, `shell32`, `ole32`, `uxtheme`, `dwmapi`, `crypt32`.
+- En el primer arranque la aplicación se registra en `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (nombre del valor `AeroClip`) para iniciar con Windows y aparecer en `msconfig` y en la sección Inicio del Panel de control. La entrada usa la ruta del ejecutable actual resuelta con `GetModuleFileNameW`, por lo que no se necesita ningún instalador. Si el usuario deshabilita la entrada desde `msconfig`, Windows renombra el valor a `AeroClip_disabled` y la aplicación respeta esa decisión: nunca se vuelve a habilitar sola en arranques posteriores. Para rehabilitarla, hazlo desde `msconfig` o desde la UI de Inicio. La aplicación no escribe nada más en el registro y no instala servicios ni tareas programadas.
+- El binario de release se enlaza estáticamente contra el runtime de C. Solo depende de las DLL del sistema que vienen con Windows 7: `kernel32`, `user32`, `gdi32`, `gdiplus`, `shell32`, `ole32`, `uxtheme`, `dwmapi`, `crypt32`, `advapi32`.
 
 ## Compilar desde el código fuente
 

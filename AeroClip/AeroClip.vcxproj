@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -83,7 +83,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;Advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <Manifest>app.manifest</Manifest>
     </Link>
   </ItemDefinitionGroup>
@@ -102,7 +102,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;Advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <Manifest>app.manifest</Manifest>
     </Link>
   </ItemDefinitionGroup>
@@ -120,7 +120,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <Manifest>app.manifest</Manifest>
-      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;Advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -139,7 +139,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <Manifest>app.manifest</Manifest>
-      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dwmapi.lib;uxtheme.lib;gdiplus.lib;Crypt32.lib;Advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -147,6 +147,7 @@
     <ClCompile Include="..\src\Storage\HistoryBuffer.cpp" />
     <ClCompile Include="..\src\Storage\lz4.c" />
     <ClCompile Include="..\src\Utils\InputInjector.cpp" />
+    <ClCompile Include="..\src\Utils\AutoStart.cpp" />
     <ClCompile Include="..\src\Clipboard\ClipboardMonitor.cpp" />
     <ClCompile Include="..\src\Clipboard\DataConverter.cpp" />
     <ClCompile Include="..\src\UI\ThemeEngine.cpp" />
@@ -161,6 +162,7 @@
     <ClInclude Include="..\include\AeroClip.h" />
     <ClInclude Include="..\include\Storage\HistoryBuffer.h" />
     <ClInclude Include="..\include\Utils\InputInjector.h" />
+    <ClInclude Include="..\include\Utils\AutoStart.h" />
     <ClInclude Include="..\include\Clipboard\ClipboardMonitor.h" />
     <ClInclude Include="..\include\Clipboard\DataConverter.h" />
     <ClInclude Include="..\include\UI\ThemeEngine.h" />
